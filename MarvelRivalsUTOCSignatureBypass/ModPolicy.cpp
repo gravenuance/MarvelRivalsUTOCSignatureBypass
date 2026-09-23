@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cwctype>
 #include <fstream>
+#include <optional>
 #include <system_error>
 #include <vector>
 
@@ -18,18 +19,17 @@ namespace bypass
             return key;
         }
 
-        // An unreadable or oversized .utoc is treated as having no gameplay content, matching Galacta's missing-file case.
-        std::vector<std::uint8_t> ReadUtoc(const std::filesystem::path& utocPath)
+        std::optional<std::vector<std::uint8_t>> ReadUtoc(const std::filesystem::path& utocPath)
         {
             std::error_code error;
             const auto size = std::filesystem::file_size(utocPath, error);
-            if (error || size > ModPolicy::MaxUtocBytes) return {};
+            if (error || size > ModPolicy::MaxUtocBytes) return std::nullopt;
 
             std::ifstream file(utocPath, std::ios::binary);
-            if (!file) return {};
+            if (!file) return std::nullopt;
             std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
             file.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-            if (file.gcount() != static_cast<std::streamsize>(bytes.size())) return {};
+            if (file.gcount() != static_cast<std::streamsize>(bytes.size())) return std::nullopt;
             return bytes;
         }
     }
@@ -41,6 +41,7 @@ namespace bypass
         case UnmountVerdict::AllowNotAMod: return "not a mod";
         case UnmountVerdict::AllowGameplayMod: return "gameplay mod";
         case UnmountVerdict::KeepCosmeticMod: return "cosmetic mod";
+        case UnmountVerdict::KeepUnchecked: return "no .utoc to check";
         }
         return "unknown";
     }
@@ -88,7 +89,9 @@ namespace bypass
         if (path.is_relative()) path = baseDirectory_ / path;
         path.replace_extension(L".utoc");
 
+        // A pak without a readable .utoc is kept, as Galacta does: there is nothing to show it changes gameplay.
         const auto utoc = ReadUtoc(path);
-        return HasGameplayContent(utoc) ? UnmountVerdict::AllowGameplayMod : UnmountVerdict::KeepCosmeticMod;
+        if (!utoc) return UnmountVerdict::KeepUnchecked;
+        return HasGameplayContent(*utoc) ? UnmountVerdict::AllowGameplayMod : UnmountVerdict::KeepCosmeticMod;
     }
 }

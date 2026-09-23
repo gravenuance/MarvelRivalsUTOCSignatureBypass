@@ -27,9 +27,16 @@ namespace bypass::log
 
     void Open(const std::filesystem::path& path) noexcept
     {
-        std::filesystem::path previous = path;
-        previous += L".1";
-        MoveFileExW(path.c_str(), previous.c_str(), MOVEFILE_REPLACE_EXISTING);
+        try
+        {
+            std::filesystem::path previous = path;
+            previous += L".1";
+            MoveFileExW(path.c_str(), previous.c_str(), MOVEFILE_REPLACE_EXISTING);
+        }
+        catch (const std::bad_alloc&)
+        {
+            // Losing the previous run's log is acceptable; failing to start is not.
+        }
 
         std::scoped_lock guard(writeLock);
         file = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);

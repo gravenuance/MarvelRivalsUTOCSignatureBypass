@@ -15,9 +15,14 @@ namespace bypass
         AllowNotAMod,
         AllowGameplayMod,
         KeepCosmeticMod,
+        KeepUnchecked,
     };
 
     [[nodiscard]] std::string_view Describe(UnmountVerdict verdict) noexcept;
+    [[nodiscard]] constexpr bool KeepsMounted(UnmountVerdict verdict) noexcept
+    {
+        return verdict == UnmountVerdict::KeepCosmeticMod || verdict == UnmountVerdict::KeepUnchecked;
+    }
 
     // True for any path inside a Paks/~mods folder, in either slash style and any letter case.
     [[nodiscard]] bool IsInModsFolder(std::wstring_view pakPath) noexcept;

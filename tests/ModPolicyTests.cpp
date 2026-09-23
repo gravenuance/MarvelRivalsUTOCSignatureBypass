@@ -63,6 +63,16 @@ TEST(GameplayContentIsAbilityOrCameraShake)
     CHECK(!HasGameplayContent(bytesOf(skin)));
 }
 
+TEST(OnlyModVerdictsKeepThePakMounted)
+{
+    CHECK(!KeepsMounted(UnmountVerdict::AllowNotAMod));
+    CHECK(!KeepsMounted(UnmountVerdict::AllowGameplayMod));
+    CHECK(KeepsMounted(UnmountVerdict::KeepCosmeticMod));
+    CHECK(KeepsMounted(UnmountVerdict::KeepUnchecked));
+    for (const auto verdict : { UnmountVerdict::AllowNotAMod, UnmountVerdict::AllowGameplayMod, UnmountVerdict::KeepCosmeticMod, UnmountVerdict::KeepUnchecked })
+        CHECK(Describe(verdict) != "unknown");
+}
+
 TEST(CosmeticModIsKeptMounted)
 {
     const GameFolder game("cosmetic");
@@ -83,7 +93,7 @@ TEST(ModWithoutUtocIsKeptMounted)
 {
     const GameFolder game("noutoc");
     ModPolicy policy(game.Root());
-    CHECK(policy.Decide(PakIn(game.Mods(), "zLegacy_P")) == UnmountVerdict::KeepCosmeticMod);
+    CHECK(policy.Decide(PakIn(game.Mods(), "zLegacy_P")) == UnmountVerdict::KeepUnchecked);
 }
 
 TEST(RelativePakPathResolvesAgainstGameFolder)

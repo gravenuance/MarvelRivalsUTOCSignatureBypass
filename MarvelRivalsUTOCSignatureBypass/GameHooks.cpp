@@ -46,28 +46,45 @@ namespace bypass
             return &noSigningKeys;
         }
 
-        bool HookedUnmount(void* pakPlatformFile, const wchar_t* pakFilename)
+        // The policy only throws on allocation failure; fall back to the folder rule, which cannot.
+        UnmountVerdict DecideSafely(std::wstring_view pak) noexcept
         {
-            const std::wstring_view name = pakFilename != nullptr ? pakFilename : L"";
-            UnmountVerdict verdict = UnmountVerdict::AllowNotAMod;
             try
             {
-                verdict = modPolicy->Decide(name);
+                return modPolicy->Decide(pak);
             }
             catch (const std::exception& error)
             {
-                log::Error(std::format("Could not check {}: {}", log::Narrow(name), error.what()));
+                log::Error(error.what());
+                return IsInModsFolder(pak) ? UnmountVerdict::KeepUnchecked : UnmountVerdict::AllowNotAMod;
             }
+        }
 
-            if (verdict == UnmountVerdict::KeepCosmeticMod)
+        // Runs on the engine's call frame, so formatting failures must stay in here.
+        void LogUnmount(std::string_view outcome, UnmountVerdict verdict, std::wstring_view pak) noexcept
+        {
+            try
             {
-                log::Info(std::format("Kept mounted ({}): {}", Describe(verdict), log::Narrow(name)));
+                log::Info(std::format("{} ({}): {}", outcome, Describe(verdict), log::Narrow(pak)));
+            }
+            catch (const std::exception&)
+            {
+                log::Error("Could not format a log line");
+            }
+        }
+
+        bool HookedUnmount(void* pakPlatformFile, const wchar_t* pakFilename)
+        {
+            const std::wstring_view pak = pakFilename != nullptr ? pakFilename : L"";
+            const UnmountVerdict verdict = DecideSafely(pak);
+            if (KeepsMounted(verdict))
+            {
+                LogUnmount("Kept mounted", verdict, pak);
                 return false;
             }
 
             const bool unmounted = originalUnmount(pakPlatformFile, pakFilename);
-            if (verdict != UnmountVerdict::AllowNotAMod)
-                log::Info(std::format("Unmount allowed ({}): {} -> {}", Describe(verdict), log::Narrow(name), unmounted ? "unmounted" : "failed"));
+            if (verdict == UnmountVerdict::AllowGameplayMod) LogUnmount(unmounted ? "Unmounted" : "Unmount failed", verdict, pak);
             return unmounted;
         }
 
