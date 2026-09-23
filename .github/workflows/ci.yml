@@ -1,0 +1,21 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: microsoft/setup-msbuild@v3
+      # Release is the shipping configuration: /W4 /WX applies, so any warning fails the run.
+      - name: Build
+        run: msbuild MarvelRivalsUTOCSignatureBypass.sln /p:Configuration=Release /p:Platform=x64 /m /nologo
+      - name: Test
+        run: build\Release\Tests.exe
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: MarvelRivalsUTOCSignatureBypass
+          path: build/Release/MarvelRivalsUTOCSignatureBypass.asi

@@ -1,0 +1,33 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: microsoft/setup-msbuild@v3
+      - name: Build
+        run: msbuild MarvelRivalsUTOCSignatureBypass.sln /p:Configuration=Release /p:Platform=x64 /m /nologo
+      - name: Test
+        run: build\Release\Tests.exe
+      - name: Extract changelog section
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          $lines = Get-Content CHANGELOG.md
+          $start = ($lines | Select-String -Pattern "^## \[$([regex]::Escape($version))\]").LineNumber
+          if (-not $start) { throw "CHANGELOG.md has no section for $version" }
+          $end = ($lines[$start..($lines.Count - 1)] | Select-String -Pattern '^## ' | Select-Object -First 1).LineNumber
+          $section = if ($end) { $lines[$start..($start + $end - 2)] } else { $lines[$start..($lines.Count - 1)] }
+          $section -join "`n" | Set-Content release-notes.md
+      - uses: softprops/action-gh-release@v3.0.3
+        with:
+          body_path: release-notes.md
+          files: build/Release/MarvelRivalsUTOCSignatureBypass.asi
