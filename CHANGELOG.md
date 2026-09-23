@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Changed
+- Microsoft Detours is built from source, pinned to commit `adb07604aa` (August 2026) as a git submodule, instead of an unversioned prebuilt `detours.lib`. The last tagged release, 4.0.1, is from 2018; `main` carries the fixes since.
+
 ## [2.0.0] - 2026-09-24
 
 ### Added

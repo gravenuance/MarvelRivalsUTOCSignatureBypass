@@ -45,12 +45,15 @@ Why hook `Unmount` rather than remount afterwards like Galacta? Every unmount, w
 
 ## Build
 
-Requires Visual Studio 2022 Build Tools (MSVC v143) and the Windows 10+ SDK.
+Requires Visual Studio 2022 Build Tools (MSVC v143) and the Windows 10+ SDK. [Microsoft Detours](https://github.com/microsoft/Detours) is a git submodule pinned to a specific commit and built from source with the rest of the solution, so clone with submodules:
 
 ```
+git clone --recurse-submodules https://github.com/gravenuance/MarvelRivalsUTOCSignatureBypass.git
 msbuild MarvelRivalsUTOCSignatureBypass.sln /p:Configuration=Release /p:Platform=x64
 build\Release\Tests.exe
 ```
+
+In an existing clone, run `git submodule update --init` first.
 
 The plugin is `build\Release\MarvelRivalsUTOCSignatureBypass.asi`. Release builds treat every warning as an error, and CI runs the same two commands.
 
@@ -63,4 +66,4 @@ Two read-only checks against a real install:
 
 ## License
 
-LGPL-2.1, as upstream. See [LICENSE.txt](LICENSE.txt). The bundled Microsoft Detours library is MIT-licensed.
+LGPL-2.1, as upstream. See [LICENSE.txt](LICENSE.txt). Microsoft Detours (`external/Detours`) is MIT-licensed.

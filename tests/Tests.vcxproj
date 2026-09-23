@@ -25,6 +25,7 @@
   <ItemDefinitionGroup>
     <ClCompile>
       <PreprocessorDefinitions>_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\external\Detours\src;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -37,6 +38,7 @@
   <ItemGroup>
     <ClCompile Include="TestMain.cpp" />
     <ClCompile Include="ByteSearchTests.cpp" />
+    <ClCompile Include="DetoursTests.cpp" />
     <ClCompile Include="LocatorTests.cpp" />
     <ClCompile Include="ModPolicyTests.cpp" />
     <ClCompile Include="Probe.cpp" />
@@ -44,6 +46,11 @@
     <ClCompile Include="..\MarvelRivalsUTOCSignatureBypass\Locators.cpp" />
     <ClCompile Include="..\MarvelRivalsUTOCSignatureBypass\ModPolicy.cpp" />
     <ClCompile Include="..\MarvelRivalsUTOCSignatureBypass\ModuleImage.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\external\Detours.vcxproj">
+      <Project>{8e2f6c1a-4b7d-4f3e-a9c5-1d0b3e7f2a64}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

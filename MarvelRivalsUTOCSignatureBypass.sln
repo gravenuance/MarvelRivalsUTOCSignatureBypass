@@ -4,6 +4,8 @@ VisualStudioVersion = 17.14.0.0
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MarvelRivalsUTOCSignatureBypass", "MarvelRivalsUTOCSignatureBypass\MarvelRivalsUTOCSignatureBypass.vcxproj", "{DD668AA2-1D75-4999-8729-2A7588984FD0}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Detours", "external\Detours.vcxproj", "{8E2F6C1A-4B7D-4F3E-A9C5-1D0B3E7F2A64}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Tests", "tests\Tests.vcxproj", "{5B0C3A6E-8D21-4C7F-9E4A-2F6D1B8C7A90}"
 EndProject
 Global
@@ -20,6 +22,10 @@ Global
 		{5B0C3A6E-8D21-4C7F-9E4A-2F6D1B8C7A90}.Debug|x64.Build.0 = Debug|x64
 		{5B0C3A6E-8D21-4C7F-9E4A-2F6D1B8C7A90}.Release|x64.ActiveCfg = Release|x64
 		{5B0C3A6E-8D21-4C7F-9E4A-2F6D1B8C7A90}.Release|x64.Build.0 = Release|x64
+		{8E2F6C1A-4B7D-4F3E-A9C5-1D0B3E7F2A64}.Debug|x64.ActiveCfg = Debug|x64
+		{8E2F6C1A-4B7D-4F3E-A9C5-1D0B3E7F2A64}.Debug|x64.Build.0 = Debug|x64
+		{8E2F6C1A-4B7D-4F3E-A9C5-1D0B3E7F2A64}.Release|x64.ActiveCfg = Release|x64
+		{8E2F6C1A-4B7D-4F3E-A9C5-1D0B3E7F2A64}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

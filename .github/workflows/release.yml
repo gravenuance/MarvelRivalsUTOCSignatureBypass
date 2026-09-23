@@ -12,6 +12,8 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v7.0.1
+        with:
+          submodules: true
       - uses: microsoft/setup-msbuild@v3
       # Recorded so a release can be rebuilt byte for byte with the same compiler.
       - name: Toolset version
