@@ -54,7 +54,7 @@ build\Release\Tests.exe
 
 The plugin is `build\Release\MarvelRivalsUTOCSignatureBypass.asi`. Release builds treat every warning as an error, and CI runs the same two commands.
 
-The build is deterministic: the same source and toolset give a byte-identical ASI.
+The build is deterministic: the same source built with the same MSVC version gives a byte-identical ASI. Releases are built by CI, so to reproduce one, build its tag with the MSVC version shown in that release's CI log.
 
 Two read-only checks against a real install:
 

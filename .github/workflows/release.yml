@@ -13,6 +13,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: microsoft/setup-msbuild@v3
+      # Recorded so a release can be rebuilt byte for byte with the same compiler.
+      - name: Toolset version
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe" -latest -property installationPath
+          "MSVC $(Get-Content "$vs/VC/Auxiliary/Build/Microsoft.VCToolsVersion.v143.default.txt")"
       - name: Build
         run: msbuild MarvelRivalsUTOCSignatureBypass.sln /p:Configuration=Release /p:Platform=x64 /m /nologo
       - name: Test
