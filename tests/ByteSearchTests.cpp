@@ -49,6 +49,31 @@ TEST(FindAllPatternHonoursWildcardsAndBoundaries)
     CHECK(matches[1] == 5);
 }
 
+TEST(FindAllPatternFindsLiteralRunsAcrossVectorBoundaries)
+{
+    // Placements on both sides of every 16-byte step and in the scalar tail, which the vector scan handles separately.
+    for (std::size_t size = 3; size <= 70; ++size)
+    {
+        for (std::size_t at = 0; at + 3 <= size; ++at)
+        {
+            Buffer haystack(size, 0x48);
+            haystack[at] = 0x48; haystack[at + 1] = 0x8D; haystack[at + 2] = 0x0D;
+            const auto matches = FindAllPattern(haystack, *BytePattern::Parse("48 8D 0D"));
+            CHECK(matches.size() == 1);
+            CHECK(matches[0] == at);
+        }
+    }
+}
+
+TEST(FindAllPatternVerifiesWildcardsAroundLongAnchor)
+{
+    const Buffer haystack = { 0xE8, 1, 2, 3, 4, 0x48, 0x8B, 0xF8, 0x00, 0x48, 0x8B, 0xF8, 0xE8, 9, 9, 9, 9, 0x48, 0x8B, 0xF8 };
+    const auto matches = FindAllPattern(haystack, *BytePattern::Parse("E8 ?? ?? ?? ?? 48 8B F8"));
+    CHECK(matches.size() == 2);
+    CHECK(matches[0] == 0);
+    CHECK(matches[1] == 12);
+}
+
 TEST(FindAllPatternIgnoresMatchTruncatedAtEnd)
 {
     const Buffer haystack = { 0x00, 0xAA, 0xBB };

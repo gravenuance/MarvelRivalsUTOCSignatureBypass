@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cstring>
 #include <functional>
+#include <intrin.h>
+#include <emmintrin.h>
 
 namespace bypass
 {
@@ -33,6 +35,38 @@ namespace bypass
         char ToLowerAscii(std::uint8_t c) noexcept
         {
             return static_cast<char>(c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c);
+        }
+
+        // Calls onMatch for every offset where the three bytes occur in sequence, testing 16 offsets per SSE2 step.
+        template <class OnMatch>
+        void ForEachTriplet(Bytes haystack, const std::uint8_t (&triplet)[3], OnMatch onMatch)
+        {
+            if (haystack.size() < 3) return;
+            const std::uint8_t* data = haystack.data();
+            const std::size_t lastStart = haystack.size() - 3;
+            const __m128i first = _mm_set1_epi8(static_cast<char>(triplet[0]));
+            const __m128i second = _mm_set1_epi8(static_cast<char>(triplet[1]));
+            const __m128i third = _mm_set1_epi8(static_cast<char>(triplet[2]));
+
+            std::size_t i = 0;
+            for (; i + 2 + 16 <= haystack.size(); i += 16)
+            {
+                const __m128i a = _mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i*>(data + i)), first);
+                const __m128i b = _mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i*>(data + i + 1)), second);
+                const __m128i c = _mm_cmpeq_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i*>(data + i + 2)), third);
+                unsigned mask = static_cast<unsigned>(_mm_movemask_epi8(_mm_and_si128(_mm_and_si128(a, b), c)));
+                while (mask != 0)
+                {
+                    unsigned long bit = 0;
+                    _BitScanForward(&bit, mask);
+                    onMatch(i + bit);
+                    mask &= mask - 1;
+                }
+            }
+            for (; i <= lastStart; ++i)
+            {
+                if (data[i] == triplet[0] && data[i + 1] == triplet[1] && data[i + 2] == triplet[2]) onMatch(i);
+            }
         }
     }
 
@@ -90,12 +124,27 @@ namespace bypass
     {
         std::vector<std::size_t> matches;
         const Bytes anchor = pattern.Anchor();
-        std::size_t from = pattern.AnchorOffset();
-        while (const auto anchorAt = FindBytes(haystack, anchor, from))
+        const std::size_t anchorOffset = pattern.AnchorOffset();
+        const auto verify = [&](std::size_t anchorAt)
         {
-            const std::size_t start = *anchorAt - pattern.AnchorOffset();
-            if (pattern.MatchesAt(haystack, start)) matches.push_back(start);
-            from = *anchorAt + 1;
+            if (anchorAt < anchorOffset) return;
+            if (pattern.MatchesAt(haystack, anchorAt - anchorOffset)) matches.push_back(anchorAt - anchorOffset);
+        };
+
+        if (anchor.size() >= 3)
+        {
+            const std::uint8_t triplet[3] = { anchor[0], anchor[1], anchor[2] };
+            ForEachTriplet(haystack, triplet, verify);
+            return matches;
+        }
+
+        const std::boyer_moore_horspool_searcher searcher(anchor.begin(), anchor.end());
+        for (auto at = haystack.begin() + static_cast<std::ptrdiff_t>(std::min(anchorOffset, haystack.size()));;)
+        {
+            at = std::search(at, haystack.end(), searcher);
+            if (at == haystack.end()) break;
+            verify(static_cast<std::size_t>(at - haystack.begin()));
+            ++at;
         }
         return matches;
     }
@@ -130,19 +179,16 @@ namespace bypass
 
     std::vector<std::uintptr_t> FindLeaRcxReferences(const CodeRegion& code, std::uintptr_t target)
     {
-        static constexpr std::uint8_t leaRcxRip[] = { 0x48, 0x8D, 0x0D };
+        static constexpr std::uint8_t leaRcxRip[3] = { 0x48, 0x8D, 0x0D };
         constexpr std::size_t instructionLength = 7;
 
         std::vector<std::uintptr_t> references;
-        std::size_t from = 0;
-        while (const auto found = FindBytes(code.bytes, leaRcxRip, from))
+        ForEachTriplet(code.bytes, leaRcxRip, [&](std::size_t found)
         {
-            from = *found + 1;
-            if (code.bytes.size() - *found < instructionLength) break;
-            const std::uintptr_t next = code.base + *found + instructionLength;
-            if (next + static_cast<std::intptr_t>(ReadInt32(code.bytes, *found + 3)) == target)
-                references.push_back(code.base + *found);
-        }
+            if (code.bytes.size() - found < instructionLength) return;
+            const std::uintptr_t next = code.base + found + instructionLength;
+            if (next + static_cast<std::intptr_t>(ReadInt32(code.bytes, found + 3)) == target) references.push_back(code.base + found);
+        });
         return references;
     }
 

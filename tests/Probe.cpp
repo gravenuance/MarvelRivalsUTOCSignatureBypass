@@ -60,7 +60,14 @@ int RunProbe(const wchar_t* executable)
         return 2;
     }
 
+    // Fault every page in first so the timings below measure the search, not the first touch of a fresh mapping.
     auto start = Clock::now();
+    volatile std::uint8_t sink = 0;
+    for (const auto* region : { &*text, &*rdata })
+        for (std::size_t i = 0; i < region->bytes.size(); i += 4096) sink = static_cast<std::uint8_t>(sink + region->bytes[i]);
+    std::printf("%-22s %.1f ms\n", "page-in", MillisecondsSince(start));
+
+    start = Clock::now();
     const auto signing = bypass::LocateSigningKeysDelegate(*text);
     Report("signing keys delegate", signing, *text, MillisecondsSince(start));
 
