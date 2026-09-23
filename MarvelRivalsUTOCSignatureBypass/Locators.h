@@ -12,6 +12,7 @@ namespace bypass
         PrologueMismatch,
         AlreadyHooked,
         Ambiguous,
+        TargetOutsideCode,
     };
 
     struct Located

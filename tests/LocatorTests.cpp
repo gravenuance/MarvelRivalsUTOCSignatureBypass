@@ -101,6 +101,10 @@ TEST(LocateSigningKeysNeedsExactlyOneMatch)
     Buffer none(0x80, 0xCC);
     CHECK(LocateSigningKeysDelegate({ Bytes(none.data(), none.size()), TextBase }).error == LocateError::MarkerMissing);
 
+    Buffer outside = one;
+    outside[0x21] = 0x00; outside[0x22] = 0x10;  // call rel32 = 0x1000, past the end of the region
+    CHECK(LocateSigningKeysDelegate({ Bytes(outside.data(), outside.size()), TextBase }).error == LocateError::TargetOutsideCode);
+
     Buffer two = one;
     std::memcpy(two.data() + 0x50, callSite.data(), callSite.size());
     CHECK(LocateSigningKeysDelegate({ Bytes(two.data(), two.size()), TextBase }).error == LocateError::Ambiguous);

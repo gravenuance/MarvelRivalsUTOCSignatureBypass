@@ -1,4 +1,7 @@
 #include <chrono>
+#include <filesystem>
+#include <map>
+#include <vector>
 #include <cstdio>
 #include <cstring>
 
@@ -6,6 +9,7 @@
 #include <windows.h>
 
 #include "../MarvelRivalsUTOCSignatureBypass/Locators.h"
+#include "../MarvelRivalsUTOCSignatureBypass/ModPolicy.h"
 #include "../MarvelRivalsUTOCSignatureBypass/ModuleImage.h"
 #include "Probe.h"
 
@@ -83,4 +87,39 @@ int RunProbe(const wchar_t* executable)
 
     FreeLibrary(mapped);
     return signing.Found() && unmount.Found() ? 0 : 1;
+}
+
+int RunClassify(const wchar_t* paksDirectory)
+{
+    namespace fs = std::filesystem;
+    const fs::path mods = fs::path(paksDirectory) / L"~mods";
+    std::error_code error;
+    if (!fs::is_directory(mods, error))
+    {
+        std::fprintf(stderr, "No ~mods folder in %ls\n", paksDirectory);
+        return 2;
+    }
+
+    std::vector<fs::path> paks;
+    for (const auto& entry : fs::recursive_directory_iterator(mods, error))
+        if (entry.is_regular_file() && entry.path().extension() == L".pak") paks.push_back(entry.path());
+
+    bypass::ModPolicy policy(paksDirectory);
+    std::map<bypass::UnmountVerdict, int> counts;
+    const auto start = Clock::now();
+    for (const auto& pak : paks)
+    {
+        const auto verdict = policy.Decide(pak.wstring());
+        ++counts[verdict];
+        if (verdict == bypass::UnmountVerdict::AllowGameplayMod) std::printf("  gameplay: %ls\n", pak.filename().c_str());
+    }
+    const double firstPass = MillisecondsSince(start);
+
+    const auto cachedStart = Clock::now();
+    for (const auto& pak : paks) (void)policy.Decide(pak.wstring());
+    const double cachedPass = MillisecondsSince(cachedStart);
+
+    for (const auto& [verdict, count] : counts) std::printf("%-20s %d\n", bypass::Describe(verdict).data(), count);
+    std::printf("%zu paks: %.1f ms first pass, %.2f ms cached\n", paks.size(), firstPass, cachedPass);
+    return 0;
 }

@@ -19,10 +19,14 @@
       <!-- Static CRT: the plugin must not depend on whichever VC++ runtime the player has installed. -->
       <RuntimeLibrary Condition="'$(Configuration)'=='Release'">MultiThreaded</RuntimeLibrary>
       <RuntimeLibrary Condition="'$(Configuration)'=='Debug'">MultiThreadedDebug</RuntimeLibrary>
+      <!-- Deterministic output, so a release can be rebuilt byte for byte from its tag. -->
+      <AdditionalOptions>/Brepro %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <TreatLinkerWarningAsErrors>true</TreatLinkerWarningAsErrors>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <!-- Embed only the PDB's file name, not this machine's build path. -->
+      <AdditionalOptions>/Brepro /PDBALTPATH:%25_PDB%25 %(AdditionalOptions)</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
 </Project>

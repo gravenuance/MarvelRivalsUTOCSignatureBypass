@@ -19,6 +19,11 @@ namespace bypass
             return key;
         }
 
+        bool IsNormalizedModPath(std::wstring_view normalized) noexcept
+        {
+            return normalized.find(L"paks/~mods/") != std::wstring_view::npos;
+        }
+
         std::optional<std::vector<std::uint8_t>> ReadUtoc(const std::filesystem::path& utocPath)
         {
             std::error_code error;
@@ -50,7 +55,7 @@ namespace bypass
     {
         try
         {
-            return NormalizeKey(pakPath).find(L"paks/~mods/") != std::wstring::npos;
+            return IsNormalizedModPath(NormalizeKey(pakPath));
         }
         catch (const std::bad_alloc&)
         {
@@ -75,15 +80,15 @@ namespace bypass
             if (const auto found = cache_.find(key); found != cache_.end()) return found->second;
         }
 
-        const UnmountVerdict verdict = Classify(pakPath);
+        const UnmountVerdict verdict = Classify(pakPath, key);
         std::unique_lock write(cacheLock_);
         cache_.emplace(key, verdict);
         return verdict;
     }
 
-    UnmountVerdict ModPolicy::Classify(std::wstring_view pakPath) const
+    UnmountVerdict ModPolicy::Classify(std::wstring_view pakPath, std::wstring_view normalizedPath) const
     {
-        if (!IsInModsFolder(pakPath)) return UnmountVerdict::AllowNotAMod;
+        if (!IsNormalizedModPath(normalizedPath)) return UnmountVerdict::AllowNotAMod;
 
         std::filesystem::path path(pakPath);
         if (path.is_relative()) path = baseDirectory_ / path;

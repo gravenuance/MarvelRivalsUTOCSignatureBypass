@@ -1,6 +1,7 @@
 #include "Log.h"
 
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 
 #define WIN32_LEAN_AND_MEAN
@@ -46,16 +47,19 @@ namespace bypass::log
     {
         SYSTEMTIME now{};
         GetSystemTime(&now);
-        char prefix[48];
-        const int prefixLength = std::snprintf(prefix, sizeof prefix, "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ %s ",
+        // One write per line: these run on the game thread during the login unmount burst.
+        char line[1024];
+        const int prefixLength = std::snprintf(line, sizeof line, "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ %s ",
             now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond, now.wMilliseconds, LevelName(level).data());
+        const std::size_t room = sizeof line - static_cast<std::size_t>(prefixLength) - 2;
+        const std::size_t kept = message.size() < room ? message.size() : room;
+        std::memcpy(line + prefixLength, message.data(), kept);
+        std::memcpy(line + prefixLength + kept, "\r\n", 2);
 
         std::scoped_lock guard(writeLock);
         if (file == INVALID_HANDLE_VALUE) return;
         DWORD written = 0;
-        WriteFile(file, prefix, static_cast<DWORD>(prefixLength), &written, nullptr);
-        WriteFile(file, message.data(), static_cast<DWORD>(message.size()), &written, nullptr);
-        WriteFile(file, "\r\n", 2, &written, nullptr);
+        WriteFile(file, line, static_cast<DWORD>(static_cast<std::size_t>(prefixLength) + kept + 2), &written, nullptr);
     }
 
     std::string Narrow(std::wstring_view text)

@@ -42,7 +42,7 @@ namespace bypass
         static constexpr std::uintmax_t MaxUtocBytes = 64ull * 1024 * 1024;
 
     private:
-        [[nodiscard]] UnmountVerdict Classify(std::wstring_view pakPath) const;
+        [[nodiscard]] UnmountVerdict Classify(std::wstring_view pakPath, std::wstring_view normalizedPath) const;
 
         std::filesystem::path baseDirectory_;
         std::shared_mutex cacheLock_;

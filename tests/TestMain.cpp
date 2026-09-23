@@ -23,9 +23,10 @@ namespace test
 int wmain(int argc, wchar_t** argv)
 {
     if (argc == 3 && std::wstring_view(argv[1]) == L"--probe") return RunProbe(argv[2]);
+    if (argc == 3 && std::wstring_view(argv[1]) == L"--classify") return RunClassify(argv[2]);
     if (argc != 1)
     {
-        std::fprintf(stderr, "usage: Tests.exe [--probe <Marvel-Win64-Shipping.exe>]\n");
+        std::fprintf(stderr, "usage: Tests.exe [--probe <Marvel-Win64-Shipping.exe> | --classify <Paks folder>]\n");
         return 2;
     }
 

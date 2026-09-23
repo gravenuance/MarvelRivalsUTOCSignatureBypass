@@ -19,6 +19,7 @@ namespace bypass
         case LocateError::PrologueMismatch: return "function start does not match";
         case LocateError::AlreadyHooked: return "already hooked by another plugin";
         case LocateError::Ambiguous: return "pattern matches more than once";
+        case LocateError::TargetOutsideCode: return "call target is outside the code section";
         }
         return "unknown";
     }
@@ -31,7 +32,7 @@ namespace bypass
         if (matches.size() != 1) return { 0, matches.empty() ? LocateError::MarkerMissing : LocateError::Ambiguous };
 
         const auto target = ResolveCallTarget(text, text.base + matches.front());
-        if (!target) return { 0, LocateError::PrologueMismatch };
+        if (!target) return { 0, LocateError::TargetOutsideCode };
         return { *target, {} };
     }
 

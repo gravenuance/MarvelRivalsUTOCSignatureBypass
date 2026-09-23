@@ -1,7 +1,6 @@
 #include "GameHooks.h"
 
 #include <format>
-#include <memory>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -15,11 +14,11 @@ namespace bypass
 {
     namespace
     {
-        // Layout the engine expects back from the signing-keys delegate; zero keys means "nothing to verify".
+        // The engine's delegate layout (FDelegateBase): it reads delegateSize at +8, then allocation; zero means unbound, so nothing is verified.
         struct PakSigningKeys
         {
-            std::uint64_t function;
-            std::int32_t size;
+            void* allocation;
+            std::int32_t delegateSize;
         };
 
         using SigningKeysFn = PakSigningKeys* (*)();

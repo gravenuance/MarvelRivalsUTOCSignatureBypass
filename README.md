@@ -54,7 +54,12 @@ build\Release\Tests.exe
 
 The plugin is `build\Release\MarvelRivalsUTOCSignatureBypass.asi`. Release builds treat every warning as an error, and CI runs the same two commands.
 
-`Tests.exe --probe <path to Marvel-Win64-Shipping.exe>` runs both lookups against a game executable on disk, without running it, and prints where they land and how long they take. Use it to check a new game build before launching.
+The build is deterministic: the same source and toolset give a byte-identical ASI.
+
+Two read-only checks against a real install:
+
+- `Tests.exe --probe <path to Marvel-Win64-Shipping.exe>` runs both lookups against the game executable without running it, and prints where they land and how long they take. Use it to check a new game build before launching.
+- `Tests.exe --classify <path to Content\Paks>` runs the mod rules over everything in `~mods` and prints how each pak would be treated.
 
 ## License
 
