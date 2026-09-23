@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-## [2.0.0] - 2026-09-23
+## [2.0.0] - 2026-09-24
 
 ### Added
 - Unmount guard: cosmetic mods in `Paks/~mods` stay mounted when the game unmounts them at login (the September 2026 update). Replaces `MarvelRivalsUnmountBlocker.asi` and Project Galacta's remount step.
