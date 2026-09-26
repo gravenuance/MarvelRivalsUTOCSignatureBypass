@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+- Releases ship `SHA256SUMS.txt` and a GitHub build provenance attestation for the ASI.
+
 ## [2.1.0] - 2026-09-26
 
 ### Added

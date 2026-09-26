@@ -6,6 +6,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
@@ -35,7 +37,19 @@ jobs:
           $end = ($lines[$start..($lines.Count - 1)] | Select-String -Pattern '^## ' | Select-Object -First 1).LineNumber
           $section = if ($end) { $lines[$start..($start + $end - 2)] } else { $lines[$start..($lines.Count - 1)] }
           $section -join "`n" | Set-Content release-notes.md
+      - name: Checksums
+        shell: pwsh
+        run: |
+          $asi = Get-Item build/Release/MarvelRivalsUTOCSignatureBypass.asi
+          # LF, not CRLF, so sha256sum -c accepts the file.
+          $line = "$((Get-FileHash $asi -Algorithm SHA256).Hash.ToLowerInvariant())  $($asi.Name)`n"
+          [IO.File]::WriteAllText("$PWD/build/Release/SHA256SUMS.txt", $line)
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: build/Release/MarvelRivalsUTOCSignatureBypass.asi
       - uses: softprops/action-gh-release@v3.0.3
         with:
           body_path: release-notes.md
-          files: build/Release/MarvelRivalsUTOCSignatureBypass.asi
+          files: |
+            build/Release/MarvelRivalsUTOCSignatureBypass.asi
+            build/Release/SHA256SUMS.txt

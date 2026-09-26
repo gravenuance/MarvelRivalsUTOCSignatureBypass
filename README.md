@@ -73,6 +73,13 @@ The plugin is `build\Release\MarvelRivalsUTOCSignatureBypass.asi`. Release build
 
 Local rebuilds with the same MSVC version produce a byte-identical ASI. CI builds of the same code have not yet been shown to match each other; each run logs its MSVC version.
 
+Releases from 2.1.1 on ship `SHA256SUMS.txt` and a build provenance attestation. To check a download:
+
+```
+sha256sum -c SHA256SUMS.txt
+gh attestation verify MarvelRivalsUTOCSignatureBypass.asi -R gravenuance/MarvelRivalsUTOCSignatureBypass
+```
+
 Two read-only checks against a real install:
 
 - `Tests.exe --probe <path to Marvel-Win64-Shipping.exe>` runs both lookups against the game executable without running it, and prints where they land and how long they take. Use it to check a new game build before launching.
