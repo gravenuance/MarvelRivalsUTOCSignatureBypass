@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-26
+
 ### Added
 - Intro skip: the NetEase, Marvel and Unreal logo videos at startup are skipped. The files are left in place; the game just sees them as missing.
 - Optional `MarvelRivalsUTOCSignatureBypass.ini` next to the ASI; `SkipIntroVideos=0` keeps the intro videos.
