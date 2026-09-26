@@ -1,5 +1,6 @@
 #include <filesystem>
 #include <format>
+#include <string_view>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -7,6 +8,7 @@
 #include "GameHooks.h"
 #include "Log.h"
 #include "ModuleImage.h"
+#include "Settings.h"
 
 namespace
 {
@@ -30,6 +32,12 @@ namespace
         return static_cast<double>(now.QuadPart - start.QuadPart) * 1000.0 / static_cast<double>(frequency.QuadPart);
     }
 
+    std::string_view InstallIntroSkipUnlessDisabled(const bypass::Settings& settings)
+    {
+        if (settings.introVideos == bypass::IntroVideos::Play) return "disabled";
+        return bypass::InstallIntroSkip() ? "on" : "off";
+    }
+
     // Runs inside DllMain on purpose: the engine checks pak signatures during startup, before any later hook point.
     void Start(HMODULE self)
     {
@@ -38,9 +46,10 @@ namespace
         LARGE_INTEGER start{};
         QueryPerformanceCounter(&start);
 
-        std::filesystem::path logPath = ModulePath(self);
-        logPath.replace_extension(L".log");
-        log::Open(logPath);
+        const std::filesystem::path selfPath = ModulePath(self);
+        log::Open(std::filesystem::path(selfPath).replace_extension(L".log"));
+        const LoadedSettings loaded = LoadSettings(std::filesystem::path(selfPath).replace_extension(L".ini"));
+        for (const std::string& warning : loaded.warnings) log::Warning(warning);
 
         const std::filesystem::path gamePath = ModulePath(nullptr);
         log::Info(std::format("Loaded into {}", log::Narrow(gamePath.filename().wstring())));
@@ -56,8 +65,9 @@ namespace
 
         const bool signatureBypass = InstallSigningKeysBypass(*text);
         const bool unmountGuard = InstallUnmountGuard(*text, *rdata, gamePath.parent_path());
-        log::Info(std::format("Startup finished in {:.0f} ms (signature bypass {}, unmount guard {})",
-            ElapsedMilliseconds(start), signatureBypass ? "on" : "off", unmountGuard ? "on" : "off"));
+        const std::string_view introSkip = InstallIntroSkipUnlessDisabled(loaded.settings);
+        log::Info(std::format("Startup finished in {:.0f} ms (signature bypass {}, unmount guard {}, intro skip {})",
+            ElapsedMilliseconds(start), signatureBypass ? "on" : "off", unmountGuard ? "on" : "off", introSkip));
     }
 }
 

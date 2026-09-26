@@ -4,6 +4,7 @@ An ASI plugin for Marvel Rivals that lets client-side cosmetic mods load and sta
 
 - **Signature bypass.** The game accepts mod containers (`.pak`/`.utoc`/`.ucas`) that are not signed.
 - **Unmount guard.** Since the September 2026 update the game unmounts everything in `Paks/~mods` during login. The plugin refuses that unmount for cosmetic mods, so they stay loaded. This replaces both `MarvelRivalsUnmountBlocker.asi` and Project Galacta's remount step.
+- **Intro skip.** The NetEase, Marvel and Unreal logo videos at startup are skipped.
 
 Fork of [DeathChaos25/MarvelRivalsUTOCSignatureBypass](https://github.com/DeathChaos25/MarvelRivalsUTOCSignatureBypass) ([Nexus page](https://www.nexusmods.com/marvelrivals/mods/2940)).
 
@@ -17,6 +18,16 @@ Needs an ASI loader (for example `dsound.dll` in `MarvelGame/Marvel/Binaries/Win
 
 Project Galacta's menu still works alongside this plugin, but you don't need Galacta for mods to load.
 
+To keep the intro videos, put a `MarvelRivalsUTOCSignatureBypass.ini` next to the ASI:
+
+```ini
+[Settings]
+Version=1
+SkipIntroVideos=0
+```
+
+Without the file, or without the key, intro videos are skipped.
+
 ## Which mods stay loaded
 
 Every pak under `Paks/~mods` is kept, **except** a container whose `.utoc` lists `AbilitySystem` or `CameraShake` assets. Those can change gameplay, so the game is allowed to unmount them. This is the same rule Project Galacta uses. A pak with no `.utoc` next to it is kept.
@@ -28,7 +39,9 @@ Everything the plugin does goes to `MarvelRivalsUTOCSignatureBypass.log` next to
 ```
 INFO  Signature bypass installed at .text+0xf0a870
 INFO  Unmount guard installed at .text+0x1a17690
-INFO  Startup finished in … ms (signature bypass on, unmount guard on)
+INFO  Intro skip installed
+INFO  Startup finished in … ms (signature bypass on, unmount guard on, intro skip on)
+INFO  Skipped intro video: …\MarvelGame\Marvel\Content\Marvel\MoviesBink\Movies\MarvelLogo\COMMON\MarvelLogoVideo_Common.bk2
 INFO  Kept mounted (cosmetic mod): ../../../Marvel/Content/Paks/~mods/zSkin_9999999_P.pak
 ```
 
@@ -36,10 +49,11 @@ If a game update moves things, the log says which lookup failed and why, and tha
 
 ## How it works
 
-Both hooks are located at runtime, not from hard-coded addresses.
+Both game hooks are located at runtime, not from hard-coded addresses.
 
 - **Signing keys:** upstream's byte pattern at the call site of the function that returns the pak signing keys. The hook returns an empty key list. The pattern must match exactly once, or nothing is hooked.
 - **Unmount:** NetEase's pak-unmount wrapper logs `Unmounting pak file: %s` and then jumps into the engine's `FPakPlatformFile::Unmount`. The plugin finds that string, the code that references it, and the jump, and checks the target's first bytes before hooking it.
+- **Intro skip:** the game picks its logo videos from a data table, so no ini setting turns them off, and the game's integrity check may restore deleted files. Instead the plugin hooks the Windows file functions (`CreateFileW`, `CreateFile2`, `GetFileAttributesW`, `GetFileAttributesExW` in KernelBase) and reports anything under `MoviesBink/Movies/MarvelLogo/` as not found. Every other file, including the lobby videos, passes straight through.
 
 Why hook `Unmount` rather than remount afterwards like Galacta? Every unmount, whatever triggers it, goes through that one function, and the hook sees the engine's own result. Refusing it means mods are never missing even for a moment, and nothing depends on timing or on the login screen's widget names. The engine's mount function has no "already mounted" check, so blind remounting risks mounting a pak twice.
 

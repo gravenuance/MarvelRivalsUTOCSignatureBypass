@@ -1,11 +1,13 @@
 #include "GameHooks.h"
 
 #include <format>
+#include <initializer_list>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <detours.h>
 
+#include "IntroSkip.h"
 #include "Locators.h"
 #include "Log.h"
 #include "ModPolicy.h"
@@ -31,12 +33,30 @@ namespace bypass
         // Lives for the whole process: the engine can call the hook until the moment it exits.
         ModPolicy* modPolicy = nullptr;
 
-        bool Detour(void** original, void* replacement)
+        decltype(&CreateFileW) originalCreateFileW = nullptr;
+        decltype(&CreateFile2) originalCreateFile2 = nullptr;
+        decltype(&GetFileAttributesW) originalGetFileAttributesW = nullptr;
+        decltype(&GetFileAttributesExW) originalGetFileAttributesExW = nullptr;
+        SeenPaths skippedIntroVideos;
+
+        struct Detoured
+        {
+            void** original;
+            void* replacement;
+        };
+
+        // One transaction, so either every hook is attached or none is.
+        bool Detour(std::initializer_list<Detoured> hooks)
         {
             DetourTransactionBegin();
             DetourUpdateThread(GetCurrentThread());
-            DetourAttach(original, replacement);
+            for (const Detoured& hook : hooks) DetourAttach(hook.original, hook.replacement);
             return DetourTransactionCommit() == NO_ERROR;
+        }
+
+        bool Detour(void** original, void* replacement)
+        {
+            return Detour({ { original, replacement } });
         }
 
         PakSigningKeys* HookedSigningKeys()
@@ -87,6 +107,61 @@ namespace bypass
             return unmounted;
         }
 
+        void LogSkippedIntroVideo(std::wstring_view path) noexcept
+        {
+            try
+            {
+                log::Info(std::format("Skipped intro video: {}", log::Narrow(path)));
+            }
+            catch (const std::exception&)
+            {
+                log::Error("Could not format a log line");
+            }
+        }
+
+        // Runs on every file open and attribute query in the process, so a miss costs one scan and nothing more.
+        // The log writes through an already open handle with WriteFile, which is not hooked, so this cannot recurse.
+        bool HidesIntroVideo(const wchar_t* path) noexcept
+        {
+            if (path == nullptr || !IsIntroVideo(path)) return false;
+            if (skippedIntroVideos.Insert(path)) LogSkippedIntroVideo(path);
+            SetLastError(ERROR_FILE_NOT_FOUND);
+            return true;
+        }
+
+        HANDLE WINAPI HookedCreateFileW(LPCWSTR fileName, DWORD access, DWORD shareMode, LPSECURITY_ATTRIBUTES security,
+            DWORD disposition, DWORD flags, HANDLE templateFile)
+        {
+            if (HidesIntroVideo(fileName)) return INVALID_HANDLE_VALUE;
+            return originalCreateFileW(fileName, access, shareMode, security, disposition, flags, templateFile);
+        }
+
+        HANDLE WINAPI HookedCreateFile2(LPCWSTR fileName, DWORD access, DWORD shareMode, DWORD disposition,
+            LPCREATEFILE2_EXTENDED_PARAMETERS parameters)
+        {
+            if (HidesIntroVideo(fileName)) return INVALID_HANDLE_VALUE;
+            return originalCreateFile2(fileName, access, shareMode, disposition, parameters);
+        }
+
+        DWORD WINAPI HookedGetFileAttributesW(LPCWSTR fileName)
+        {
+            if (HidesIntroVideo(fileName)) return INVALID_FILE_ATTRIBUTES;
+            return originalGetFileAttributesW(fileName);
+        }
+
+        BOOL WINAPI HookedGetFileAttributesExW(LPCWSTR fileName, GET_FILEEX_INFO_LEVELS level, LPVOID information)
+        {
+            if (HidesIntroVideo(fileName)) return FALSE;
+            return originalGetFileAttributesExW(fileName, level, information);
+        }
+
+        template <typename Fn>
+        bool Resolve(HMODULE module, const char* name, Fn& function)
+        {
+            function = reinterpret_cast<Fn>(GetProcAddress(module, name));
+            return function != nullptr;
+        }
+
         std::string Address(const CodeRegion& text, std::uintptr_t address)
         {
             return std::format(".text+{:#x}", address - text.base);
@@ -130,6 +205,34 @@ namespace bypass
             return false;
         }
         log::Info(std::format("Unmount guard installed at {}", Address(text, target.address)));
+        return true;
+    }
+
+    bool InstallIntroSkip()
+    {
+        // KernelBase holds the implementations: kernel32's exports and the api-ms-win-core-file sets both land here.
+        const HMODULE kernelBase = GetModuleHandleW(L"KernelBase.dll");
+        if (kernelBase == nullptr
+            || !Resolve(kernelBase, "CreateFileW", originalCreateFileW)
+            || !Resolve(kernelBase, "CreateFile2", originalCreateFile2)
+            || !Resolve(kernelBase, "GetFileAttributesW", originalGetFileAttributesW)
+            || !Resolve(kernelBase, "GetFileAttributesExW", originalGetFileAttributesExW))
+        {
+            log::Error("Intro skip not installed: KernelBase file functions not found");
+            return false;
+        }
+
+        if (!Detour({
+                { reinterpret_cast<void**>(&originalCreateFileW), reinterpret_cast<void*>(&HookedCreateFileW) },
+                { reinterpret_cast<void**>(&originalCreateFile2), reinterpret_cast<void*>(&HookedCreateFile2) },
+                { reinterpret_cast<void**>(&originalGetFileAttributesW), reinterpret_cast<void*>(&HookedGetFileAttributesW) },
+                { reinterpret_cast<void**>(&originalGetFileAttributesExW), reinterpret_cast<void*>(&HookedGetFileAttributesExW) },
+            }))
+        {
+            log::Error("Intro skip not installed: hook failed");
+            return false;
+        }
+        log::Info("Intro skip installed");
         return true;
     }
 }

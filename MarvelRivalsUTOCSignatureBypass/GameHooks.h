@@ -10,4 +10,7 @@ namespace bypass
 
     // Keeps cosmetic mods in Paks/~mods mounted when the game tries to unmount them after login.
     [[nodiscard]] bool InstallUnmountGuard(const CodeRegion& text, const CodeRegion& rdata, const std::filesystem::path& gameDirectory);
+
+    // Makes the startup logo videos look deleted to every file open and attribute query in the process.
+    [[nodiscard]] bool InstallIntroSkip();
 }

@@ -44,19 +44,23 @@
   <ItemGroup>
     <ClInclude Include="ByteSearch.h" />
     <ClInclude Include="GameHooks.h" />
+    <ClInclude Include="IntroSkip.h" />
     <ClInclude Include="Locators.h" />
     <ClInclude Include="Log.h" />
     <ClInclude Include="ModPolicy.h" />
     <ClInclude Include="ModuleImage.h" />
+    <ClInclude Include="Settings.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ByteSearch.cpp" />
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="GameHooks.cpp" />
+    <ClCompile Include="IntroSkip.cpp" />
     <ClCompile Include="Locators.cpp" />
     <ClCompile Include="Log.cpp" />
     <ClCompile Include="ModPolicy.cpp" />
     <ClCompile Include="ModuleImage.cpp" />
+    <ClCompile Include="Settings.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\external\Detours.vcxproj">

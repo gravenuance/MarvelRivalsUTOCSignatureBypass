@@ -39,13 +39,19 @@
     <ClCompile Include="TestMain.cpp" />
     <ClCompile Include="ByteSearchTests.cpp" />
     <ClCompile Include="DetoursTests.cpp" />
+    <ClCompile Include="IntroSkipTests.cpp" />
     <ClCompile Include="LocatorTests.cpp" />
     <ClCompile Include="ModPolicyTests.cpp" />
     <ClCompile Include="Probe.cpp" />
+    <ClCompile Include="SettingsTests.cpp" />
     <ClCompile Include="..\MarvelRivalsUTOCSignatureBypass\ByteSearch.cpp" />
+    <ClCompile Include="..\MarvelRivalsUTOCSignatureBypass\GameHooks.cpp" />
+    <ClCompile Include="..\MarvelRivalsUTOCSignatureBypass\IntroSkip.cpp" />
     <ClCompile Include="..\MarvelRivalsUTOCSignatureBypass\Locators.cpp" />
+    <ClCompile Include="..\MarvelRivalsUTOCSignatureBypass\Log.cpp" />
     <ClCompile Include="..\MarvelRivalsUTOCSignatureBypass\ModPolicy.cpp" />
     <ClCompile Include="..\MarvelRivalsUTOCSignatureBypass\ModuleImage.cpp" />
+    <ClCompile Include="..\MarvelRivalsUTOCSignatureBypass\Settings.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\external\Detours.vcxproj">
