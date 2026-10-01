@@ -1,6 +1,7 @@
 #include <filesystem>
 #include <format>
 #include <string_view>
+#include <system_error>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -18,6 +19,7 @@ namespace
         for (;;)
         {
             const DWORD length = GetModuleFileNameW(module, buffer.data(), static_cast<DWORD>(buffer.size()));
+            if (length == 0) throw std::system_error(static_cast<int>(GetLastError()), std::system_category(), "GetModuleFileNameW");
             if (length < buffer.size()) return buffer.substr(0, length);
             buffer.resize(buffer.size() * 2);
         }

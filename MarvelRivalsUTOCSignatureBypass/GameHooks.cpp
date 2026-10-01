@@ -2,6 +2,7 @@
 
 #include <format>
 #include <initializer_list>
+#include <memory>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -197,13 +198,16 @@ namespace bypass
             return false;
         }
 
-        modPolicy = new ModPolicy(gameDirectory);
+        auto policy = std::make_unique<ModPolicy>(gameDirectory);
+        modPolicy = policy.get();
         originalUnmount = reinterpret_cast<UnmountFn>(target.address);
         if (!Detour(reinterpret_cast<void**>(&originalUnmount), reinterpret_cast<void*>(&HookedUnmount)))
         {
+            modPolicy = nullptr;
             log::Error("Unmount guard not installed: hook failed");
             return false;
         }
+        policy.release();
         log::Info(std::format("Unmount guard installed at {}", Address(text, target.address)));
         return true;
     }
