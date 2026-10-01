@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <optional>
 
 #include "ByteSearch.h"
 
@@ -13,6 +14,7 @@ namespace bypass
         AlreadyHooked,
         Ambiguous,
         TargetOutsideCode,
+        UnexpectedTarget,
     };
 
     struct Located
@@ -23,6 +25,16 @@ namespace bypass
     };
 
     [[nodiscard]] const char* Describe(LocateError error) noexcept;
+
+    // The static delegate a getter returns, and the guard of its thread-safe initialisation.
+    struct DelegateStatic
+    {
+        std::uintptr_t delegate = 0;
+        std::uintptr_t guard = 0;
+    };
+
+    // Recognises the engine's guarded function-local static getter: a TLS read, `cmp [guard], eax`, then `lea rax, [delegate]; add rsp, n; ret`.
+    [[nodiscard]] std::optional<DelegateStatic> ReadSigningKeysGetter(const CodeRegion& text, std::uintptr_t getter);
 
     // The function that returns the pak signing keys, via the call site upstream's signature matches.
     [[nodiscard]] Located LocateSigningKeysDelegate(const CodeRegion& text);

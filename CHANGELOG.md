@@ -5,6 +5,9 @@
 ### Added
 - Releases ship `SHA256SUMS.txt` and a GitHub build provenance attestation for the ASI.
 
+### Changed
+- The signature bypass checks that the function it hooks is the signing-keys getter, and reports when another plugin has already hooked it.
+
 ## [2.1.0] - 2026-09-26
 
 ### Added

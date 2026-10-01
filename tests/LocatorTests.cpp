@@ -88,24 +88,109 @@ TEST(LocatePakUnmountDetectsAnotherPluginsHook)
     CHECK(found.error == LocateError::AlreadyHooked);
 }
 
+namespace
+{
+    // The game's getter at 0x140f0d590 (build d6ec510b), placed at its real address so its RIP operands resolve as in the game.
+    const std::vector<std::uint8_t> RealSigningKeysGetter = {
+        0x48, 0x83, 0xEC, 0x28,                                // sub rsp, 28h
+        0x8B, 0x0D, 0x76, 0xBC, 0xE9, 0x0E,                    // mov ecx, [_tls_index]
+        0x65, 0x48, 0x8B, 0x04, 0x25, 0x58, 0x00, 0x00, 0x00,  // mov rax, gs:[58h]
+        0xBA, 0xB4, 0x27, 0x00, 0x00,                          // mov edx, 27B4h
+        0x48, 0x8B, 0x04, 0xC8,                                // mov rax, [rax+rcx*8]
+        0x8B, 0x04, 0x02,                                      // mov eax, [rdx+rax]
+        0x39, 0x05, 0x1B, 0xB3, 0x93, 0x0E,                    // cmp [guard], eax
+        0x7F, 0x0C,                                            // jg init
+        0x48, 0x8D, 0x05, 0x02, 0xB3, 0x93, 0x0E,              // lea rax, [delegate]
+        0x48, 0x83, 0xC4, 0x28,                                // add rsp, 28h
+        0xC3,                                                  // ret
+        0x48, 0x8D, 0x0D, 0x06, 0xB3, 0x93, 0x0E,              // init: lea rcx, [guard]
+        0xE8, 0x41, 0x89, 0x1F, 0x09,                          // call _Init_thread_header
+        0x83, 0x3D, 0xFA, 0xB2, 0x93, 0x0E, 0xFF,              // cmp [guard], -1
+        0x75, 0xDF,                                            // jne back to the fast path
+        0x48, 0x8D, 0x0D, 0xC1, 0xDD, 0x28, 0x09,              // lea rcx, [destructor]
+        0xE8, 0x44, 0x87, 0x1F, 0x09,                          // call atexit
+        0x48, 0x8D, 0x0D, 0xE5, 0xB2, 0x93, 0x0E,              // lea rcx, [guard]
+        0xE8, 0xB4, 0x88, 0x1F, 0x09,                          // call _Init_thread_footer
+        0x48, 0x8D, 0x05, 0xC9, 0xB2, 0x93, 0x0E,              // lea rax, [delegate]
+        0x48, 0x83, 0xC4, 0x28,                                // add rsp, 28h
+        0xC3,                                                  // ret
+    };
+
+    constexpr std::size_t CallSiteOffset = 0x20;
+    constexpr std::size_t GetterOffset = 0x80;
+    constexpr std::uintptr_t RealGetterAddress = 0x140F0D590;
+    constexpr std::uintptr_t SigningTextBase = RealGetterAddress - GetterOffset;
+
+    // Upstream's call-site pattern, calling the getter at GetterOffset.
+    void PutCallSite(Buffer& text, std::size_t offset)
+    {
+        const std::vector<std::uint8_t> callSite = { 0xE8, 0x00, 0x00, 0x00, 0x00, 0x48, 0x8B, 0xF8, 0x39, 0x70, 0x08, 0x0F, 0x84, 0x01, 0x02, 0x03, 0x04 };
+        std::memcpy(text.data() + offset, callSite.data(), callSite.size());
+        PutInt32(text, offset + 1, static_cast<std::int32_t>(GetterOffset - (offset + 5)));
+    }
+
+    Buffer SigningKeysCode(const std::vector<std::uint8_t>& getter)
+    {
+        Buffer text(0x100, 0xCC);
+        PutCallSite(text, CallSiteOffset);
+        std::memcpy(text.data() + GetterOffset, getter.data(), getter.size());
+        return text;
+    }
+
+    CodeRegion Region(const Buffer& text)
+    {
+        return { Bytes(text.data(), text.size()), SigningTextBase };
+    }
+}
+
 TEST(LocateSigningKeysNeedsExactlyOneMatch)
 {
-    const std::vector<std::uint8_t> callSite = { 0xE8, 0x10, 0x00, 0x00, 0x00, 0x48, 0x8B, 0xF8, 0x39, 0x70, 0x08, 0x0F, 0x84, 0x01, 0x02, 0x03, 0x04 };
-
-    Buffer one(0x80, 0xCC);
-    std::memcpy(one.data() + 0x20, callSite.data(), callSite.size());
-    const Located found = LocateSigningKeysDelegate({ Bytes(one.data(), one.size()), TextBase });
+    const Buffer one = SigningKeysCode(RealSigningKeysGetter);
+    const Located found = LocateSigningKeysDelegate(Region(one));
     CHECK(found.Found());
-    CHECK(found.address == TextBase + 0x20 + 5 + 0x10);
+    CHECK(found.address == RealGetterAddress);
 
-    Buffer none(0x80, 0xCC);
-    CHECK(LocateSigningKeysDelegate({ Bytes(none.data(), none.size()), TextBase }).error == LocateError::MarkerMissing);
+    Buffer none(0x100, 0xCC);
+    CHECK(LocateSigningKeysDelegate(Region(none)).error == LocateError::MarkerMissing);
 
     Buffer outside = one;
-    outside[0x21] = 0x00; outside[0x22] = 0x10;  // call rel32 = 0x1000, past the end of the region
-    CHECK(LocateSigningKeysDelegate({ Bytes(outside.data(), outside.size()), TextBase }).error == LocateError::TargetOutsideCode);
+    PutInt32(outside, CallSiteOffset + 1, 0x1000);
+    CHECK(LocateSigningKeysDelegate(Region(outside)).error == LocateError::TargetOutsideCode);
 
     Buffer two = one;
-    std::memcpy(two.data() + 0x50, callSite.data(), callSite.size());
-    CHECK(LocateSigningKeysDelegate({ Bytes(two.data(), two.size()), TextBase }).error == LocateError::Ambiguous);
+    PutCallSite(two, 0x50);
+    CHECK(LocateSigningKeysDelegate(Region(two)).error == LocateError::Ambiguous);
+}
+
+TEST(ReadSigningKeysGetterFindsDelegateAndGuard)
+{
+    const Buffer text = SigningKeysCode(RealSigningKeysGetter);
+    const auto getter = ReadSigningKeysGetter(Region(text), RealGetterAddress);
+    CHECK(getter.has_value());
+    CHECK(getter->delegate == 0x14F8488C0);
+    CHECK(getter->guard == 0x14F8488D0);
+}
+
+TEST(LocateSigningKeysRejectsTargetThatIsNotTheGetter)
+{
+    CHECK(LocateSigningKeysDelegate(Region(SigningKeysCode({ 0xCC }))).error == LocateError::UnexpectedTarget);
+
+    auto noThreadLocalRead = RealSigningKeysGetter;
+    noThreadLocalRead[10] = 0x90;  // gs prefix gone
+    CHECK(LocateSigningKeysDelegate(Region(SigningKeysCode(noThreadLocalRead))).error == LocateError::UnexpectedTarget);
+
+    auto noGuardCompare = RealSigningKeysGetter;
+    noGuardCompare[31] = 0x3B;  // cmp eax, [guard]: the operands the other way round
+    CHECK(LocateSigningKeysDelegate(Region(SigningKeysCode(noGuardCompare))).error == LocateError::UnexpectedTarget);
+
+    auto noStaticReturned = RealSigningKeysGetter;
+    noStaticReturned[39] = 0x8B;  // mov rax, [delegate]: returns the value, not the static's address
+    CHECK(LocateSigningKeysDelegate(Region(SigningKeysCode(noStaticReturned))).error == LocateError::UnexpectedTarget);
+}
+
+TEST(LocateSigningKeysDetectsAnotherPluginsHook)
+{
+    auto hooked = RealSigningKeysGetter;
+    hooked[0] = 0xE9;
+    CHECK(LocateSigningKeysDelegate(Region(SigningKeysCode(hooked))).error == LocateError::AlreadyHooked);
 }

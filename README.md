@@ -51,7 +51,7 @@ If a game update moves things, the log says which lookup failed and why, and tha
 
 Both game hooks are located at runtime, not from hard-coded addresses.
 
-- **Signing keys:** upstream's byte pattern at the call site of the function that returns the pak signing keys. The hook returns an empty key list. The pattern must match exactly once, or nothing is hooked.
+- **Signing keys:** upstream's byte pattern at the call site of the function that returns the pak signing keys. The hook returns an empty key list. The pattern must match exactly once, and the function it calls must look like the engine's getter (a guarded static it returns the address of), or nothing is hooked.
 - **Unmount:** NetEase's pak-unmount wrapper logs `Unmounting pak file: %s` and then jumps into the engine's `FPakPlatformFile::Unmount`. The plugin finds that string, the code that references it, and the jump, and checks the target's first bytes before hooking it.
 - **Intro skip:** the game picks its logo videos from a data table, so no ini setting turns them off, and the game's integrity check may restore deleted files. Instead the plugin hooks the Windows file functions (`CreateFileW`, `CreateFile2`, `GetFileAttributesW`, `GetFileAttributesExW` in KernelBase) and reports anything under `MoviesBink/Movies/MarvelLogo/` as not found. Every other file, including the lobby videos, passes straight through.
 
