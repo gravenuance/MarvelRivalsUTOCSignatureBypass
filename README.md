@@ -82,7 +82,7 @@ gh attestation verify MarvelRivalsUTOCSignatureBypass.asi -R gravenuance/MarvelR
 
 Two read-only checks against a real install:
 
-- `Tests.exe --probe <path to Marvel-Win64-Shipping.exe>` runs both lookups against the game executable without running it, and prints where they land and how long they take. Use it to check a new game build before launching.
+- `Tests.exe --probe <path to Marvel-Win64-Shipping.exe>` runs both lookups against the game executable without running it, and prints where they land and how long they take. It also counts code that has its own inlined copy of the signing-keys getter; more than one copy (the function that registers the real keys) means some code could read the keys past the hook. Use it to check a new game build before launching.
 - `Tests.exe --classify <path to Content\Paks>` runs the mod rules over everything in `~mods` and prints how each pak would be treated.
 
 ## License

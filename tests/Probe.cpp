@@ -1,6 +1,10 @@
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <map>
+#include <optional>
+#include <set>
+#include <span>
 #include <vector>
 #include <cstdio>
 #include <cstring>
@@ -33,6 +37,64 @@ namespace
             if (j == length) return memory + i;
         }
         return nullptr;
+    }
+
+    // Start of the function containing rva per the exception directory, following chained unwind entries to the primary one.
+    std::optional<std::uint32_t> FunctionStart(const std::uint8_t* image, std::uint32_t rva)
+    {
+        const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(image + reinterpret_cast<const IMAGE_DOS_HEADER*>(image)->e_lfanew);
+        const std::uint32_t imageSize = nt->OptionalHeader.SizeOfImage;
+        const IMAGE_DATA_DIRECTORY& directory = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_EXCEPTION];
+        if (directory.VirtualAddress > imageSize || imageSize - directory.VirtualAddress < directory.Size) return std::nullopt;
+        const std::span functions(reinterpret_cast<const RUNTIME_FUNCTION*>(image + directory.VirtualAddress), directory.Size / sizeof(RUNTIME_FUNCTION));
+
+        const auto after = std::ranges::upper_bound(functions, rva, {}, &RUNTIME_FUNCTION::BeginAddress);
+        if (after == functions.begin() || rva >= std::prev(after)->EndAddress) return std::nullopt;
+
+        constexpr std::uint8_t ChainInfoFlag = 0x4;
+        const RUNTIME_FUNCTION* function = &*std::prev(after);
+        for (int depth = 0; depth < 32; ++depth)
+        {
+            if (function->UnwindData > imageSize - 4) return std::nullopt;
+            const std::uint8_t* unwind = image + function->UnwindData;
+            if (((unwind[0] >> 3) & ChainInfoFlag) == 0) return function->BeginAddress;
+            const std::uint32_t chained = function->UnwindData + 4 + ((unwind[2] + 1u) & ~1u) * 2;
+            if (chained > imageSize - sizeof(RUNTIME_FUNCTION)) return std::nullopt;
+            function = reinterpret_cast<const RUNTIME_FUNCTION*>(image + chained);
+        }
+        return std::nullopt;
+    }
+
+    // Every disp32 operand, followed by up to four immediate bytes, that resolves to target.
+    std::vector<std::uintptr_t> RipReferences(const bypass::CodeRegion& code, std::uintptr_t target)
+    {
+        constexpr std::uintptr_t MaxImmediateBytes = 4;
+        std::vector<std::uintptr_t> references;
+        for (std::size_t i = 0; i + 4 <= code.bytes.size(); ++i)
+        {
+            std::int32_t displacement = 0;
+            std::memcpy(&displacement, code.bytes.data() + i, sizeof displacement);
+            const std::uintptr_t afterDisplacement = code.base + i + 4 + static_cast<std::intptr_t>(displacement);
+            if (target >= afterDisplacement && target - afterDisplacement <= MaxImmediateBytes) references.push_back(code.base + i);
+        }
+        return references;
+    }
+
+    // Other functions that test the getter's guard carry an inlined copy of it, so their reads of the keys bypass the hook.
+    std::set<std::uintptr_t> InlinedGetterCopies(HMODULE image, const bypass::CodeRegion& text, std::uintptr_t getter)
+    {
+        const auto getterStatic = bypass::ReadSigningKeysGetter(text, getter);
+        if (!getterStatic) return {};
+        const auto imageBase = reinterpret_cast<std::uintptr_t>(image);
+
+        std::set<std::uintptr_t> copies;
+        for (const std::uintptr_t reference : RipReferences(text, getterStatic->guard))
+        {
+            const auto start = FunctionStart(reinterpret_cast<const std::uint8_t*>(image), static_cast<std::uint32_t>(reference - imageBase));
+            const std::uintptr_t function = start ? imageBase + *start : reference;
+            if (function != getter) copies.insert(function);
+        }
+        return copies;
     }
 
     void Report(const char* name, const bypass::Located& located, const bypass::CodeRegion& text, double milliseconds)
@@ -75,6 +137,13 @@ int RunProbe(const wchar_t* executable)
     const auto signing = bypass::LocateSigningKeysDelegate(*text);
     Report("signing keys delegate", signing, *text, MillisecondsSince(start));
 
+    // Today one function inlines the getter: the one that registers the real keys, which the hook is meant to hide.
+    start = Clock::now();
+    const auto copies = signing.Found() ? InlinedGetterCopies(image, *text, signing.address) : std::set<std::uintptr_t>{};
+    std::printf("%-22s %zu, expected 1  (%.1f ms)\n", "inlined getter copies", copies.size(), MillisecondsSince(start));
+    for (const std::uintptr_t copy : copies) std::printf("  .text+%#llx\n", static_cast<unsigned long long>(copy - text->base));
+    if (copies.size() > 1) std::printf("  More than the key registration: code that reads the keys through its own copy still sees them.\n");
+
     start = Clock::now();
     const auto unmount = bypass::LocatePakUnmount(*text, *rdata);
     Report("FPakPlatformFile::Unmount", unmount, *text, MillisecondsSince(start));
@@ -86,7 +155,7 @@ int RunProbe(const wchar_t* executable)
         upstream != nullptr ? "found" : "not found", MillisecondsSince(start));
 
     FreeLibrary(mapped);
-    return signing.Found() && unmount.Found() ? 0 : 1;
+    return signing.Found() && copies.size() <= 1 && unmount.Found() ? 0 : 1;
 }
 
 int RunClassify(const wchar_t* paksDirectory)
