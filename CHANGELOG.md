@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-10-01
+
 ### Added
 - Releases ship `SHA256SUMS.txt` and a GitHub build provenance attestation for the ASI.
 - `--probe` reports code that inlines the signing-keys getter, which would read the keys past the hook.
