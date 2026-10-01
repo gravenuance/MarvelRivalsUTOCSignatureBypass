@@ -30,7 +30,9 @@ Without the file, or without the key, intro videos are skipped.
 
 ## Which mods stay loaded
 
-Every pak under `Paks/~mods` is kept, **except** a container whose `.utoc` lists `AbilitySystem` or `CameraShake` assets. Those can change gameplay, so the game is allowed to unmount them. This is the same rule Project Galacta uses. A pak with no `.utoc` next to it is kept.
+Every pak under `Paks/~mods` is kept, **except** a container whose `.utoc` lists `AbilitySystem` or `CameraShake` assets. Those can change gameplay, so the game is allowed to unmount them. This is the same rule Project Galacta uses.
+
+A pak whose contents can't be checked is kept too: no `.utoc` next to it, a `.utoc` that can't be read or is over 64 MB, or one whose asset names are encrypted.
 
 ## Log
 
