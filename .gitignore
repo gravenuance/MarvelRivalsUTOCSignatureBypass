@@ -363,3 +363,6 @@ MigrationBackup/
 FodyWeavers.xsd
 # Local build output
 build/
+
+# Backups an editing hook writes beside changed files
+*.bak
