@@ -1,5 +1,7 @@
 #include "Settings.h"
 
+#include <algorithm>
+#include <cwctype>
 #include <format>
 #include <iterator>
 #include <optional>
@@ -21,6 +23,7 @@ namespace bypass
         {
             std::wstring version;
             std::wstring skipIntroVideos;
+            std::wstring modsAfterLogin;
         };
 
         std::wstring ReadRaw(const std::filesystem::path& iniPath, const wchar_t* key)
@@ -55,11 +58,26 @@ namespace bypass
             if (!text.empty()) warnings.push_back(std::format("SkipIntroVideos={} is not 0 or 1; using 1", log::Narrow(text)));
             return Settings{}.introVideos;
         }
+
+        bool EqualsIgnoreCase(std::wstring_view text, std::wstring_view expected) noexcept
+        {
+            return text.size() == expected.size()
+                && std::equal(text.begin(), text.end(), expected.begin(), [](wchar_t a, wchar_t b) { return std::towlower(a) == std::towlower(b); });
+        }
+
+        ModsAfterLogin ParseModsAfterLogin(std::wstring_view text, std::vector<std::string>& warnings)
+        {
+            if (EqualsIgnoreCase(text, L"remount")) return ModsAfterLogin::Remount;
+            if (EqualsIgnoreCase(text, L"keep")) return ModsAfterLogin::Keep;
+            if (EqualsIgnoreCase(text, L"off")) return ModsAfterLogin::Unload;
+            if (!text.empty()) warnings.push_back(std::format("ModsAfterLogin={} is not remount, keep or off; using remount", log::Narrow(text)));
+            return Settings{}.modsAfterLogin;
+        }
     }
 
     LoadedSettings LoadSettings(const std::filesystem::path& iniPath)
     {
-        RawSettings raw{ ReadRaw(iniPath, L"Version"), ReadRaw(iniPath, L"SkipIntroVideos") };
+        RawSettings raw{ ReadRaw(iniPath, L"Version"), ReadRaw(iniPath, L"SkipIntroVideos"), ReadRaw(iniPath, L"ModsAfterLogin") };
         LoadedSettings loaded;
         const std::optional<int> version = raw.version.empty() ? CurrentVersion : ParseVersion(raw.version);
         if (!version || !MigrateToCurrent(raw, *version))
@@ -69,6 +87,7 @@ namespace bypass
         }
 
         loaded.settings.introVideos = ParseIntroVideos(raw.skipIntroVideos, loaded.warnings);
+        loaded.settings.modsAfterLogin = ParseModsAfterLogin(raw.modsAfterLogin, loaded.warnings);
         return loaded;
     }
 }

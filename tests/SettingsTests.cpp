@@ -89,3 +89,45 @@ TEST(SettingsUnknownVersionWarnsAndUsesDefaults)
         CHECK(loaded.warnings[0].find(version) != std::string::npos);
     }
 }
+
+TEST(SettingsModsAfterLoginDefaultsToRemount)
+{
+    const IniFile ini("SettingsAfterLoginDefault");
+    CHECK(LoadSettings(ini.Path()).settings.modsAfterLogin == ModsAfterLogin::Remount);
+
+    ini.Write("[Settings]\r\nVersion=1\r\nSkipIntroVideos=0\r\n");
+    CHECK(LoadSettings(ini.Path()).settings.modsAfterLogin == ModsAfterLogin::Remount);
+}
+
+TEST(SettingsReadModsAfterLogin)
+{
+    const IniFile ini("SettingsAfterLoginRead");
+    ini.Write("[Settings]\r\nVersion=1\r\nModsAfterLogin=keep\r\n");
+    CHECK(LoadSettings(ini.Path()).settings.modsAfterLogin == ModsAfterLogin::Keep);
+    CHECK(LoadSettings(ini.Path()).warnings.empty());
+
+    ini.Write("[Settings]\r\nVersion=1\r\nModsAfterLogin=Off\r\n");
+    CHECK(LoadSettings(ini.Path()).settings.modsAfterLogin == ModsAfterLogin::Unload);
+    CHECK(LoadSettings(ini.Path()).warnings.empty());
+
+    ini.Write("[Settings]\r\nVersion=1\r\nModsAfterLogin=REMOUNT\r\n");
+    CHECK(LoadSettings(ini.Path()).settings.modsAfterLogin == ModsAfterLogin::Remount);
+    CHECK(LoadSettings(ini.Path()).warnings.empty());
+}
+
+TEST(SettingsInvalidModsAfterLoginWarnsAndRemounts)
+{
+    const IniFile ini("SettingsAfterLoginInvalid");
+    ini.Write("[Settings]\r\nVersion=1\r\nModsAfterLogin=1\r\n");
+    const LoadedSettings loaded = LoadSettings(ini.Path());
+    CHECK(loaded.settings.modsAfterLogin == ModsAfterLogin::Remount);
+    CHECK(loaded.warnings.size() == 1);
+    CHECK(loaded.warnings[0] == "ModsAfterLogin=1 is not remount, keep or off; using remount");
+}
+
+TEST(SettingsUnknownVersionRemounts)
+{
+    const IniFile ini("SettingsAfterLoginVersion");
+    ini.Write("[Settings]\r\nVersion=2\r\nModsAfterLogin=off\r\n");
+    CHECK(LoadSettings(ini.Path()).settings.modsAfterLogin == ModsAfterLogin::Remount);
+}

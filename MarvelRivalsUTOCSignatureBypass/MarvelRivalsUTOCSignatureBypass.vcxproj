@@ -48,6 +48,7 @@
     <ClInclude Include="Locators.h" />
     <ClInclude Include="Log.h" />
     <ClInclude Include="ModPolicy.h" />
+    <ClInclude Include="ModRemount.h" />
     <ClInclude Include="ModuleImage.h" />
     <ClInclude Include="Settings.h" />
   </ItemGroup>
@@ -59,6 +60,7 @@
     <ClCompile Include="Locators.cpp" />
     <ClCompile Include="Log.cpp" />
     <ClCompile Include="ModPolicy.cpp" />
+    <ClCompile Include="ModRemount.cpp" />
     <ClCompile Include="ModuleImage.cpp" />
     <ClCompile Include="Settings.cpp" />
   </ItemGroup>

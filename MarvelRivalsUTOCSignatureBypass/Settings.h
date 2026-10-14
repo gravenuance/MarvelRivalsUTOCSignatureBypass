@@ -11,9 +11,18 @@ namespace bypass
         Play,
     };
 
+    // What happens to cosmetic mods when the game unmounts Paks/~mods during login.
+    enum class ModsAfterLogin
+    {
+        Remount,  // Let the unmount happen, then mount each mod again the way the engine first did.
+        Keep,     // Refuse the unmount.
+        Unload,   // Leave the game's unmount alone.
+    };
+
     struct Settings
     {
         IntroVideos introVideos = IntroVideos::Skip;
+        ModsAfterLogin modsAfterLogin = ModsAfterLogin::Remount;
     };
 
     struct LoadedSettings

@@ -3,6 +3,8 @@
 #include <format>
 #include <initializer_list>
 #include <memory>
+#include <optional>
+#include <string>
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -12,6 +14,7 @@
 #include "Locators.h"
 #include "Log.h"
 #include "ModPolicy.h"
+#include "ModRemount.h"
 
 namespace bypass
 {
@@ -26,13 +29,18 @@ namespace bypass
 
         using SigningKeysFn = PakSigningKeys* (*)();
         using UnmountFn = bool (*)(void* pakPlatformFile, const wchar_t* pakFilename);
+        // Five arguments: both of the game's callers set exactly these (rcx, rdx, r8d, r9, [rsp+20h]) on the 2026-10-09 build.
+        using MountFn = bool (*)(void* pakPlatformFile, const wchar_t* pakFilename, std::uint32_t order, const wchar_t* mountPoint, bool loadIndex);
 
         SigningKeysFn originalSigningKeys = nullptr;
         UnmountFn originalUnmount = nullptr;
+        MountFn originalMount = nullptr;
         PakSigningKeys noSigningKeys{};
 
-        // Lives for the whole process: the engine can call the hook until the moment it exits.
+        // Live for the whole process: the engine can call the hooks until the moment it exits.
         ModPolicy* modPolicy = nullptr;
+        MountLog* mountLog = nullptr;
+        ModsAfterLogin modsAfterLogin = ModsAfterLogin::Remount;
 
         decltype(&CreateFileW) originalCreateFileW = nullptr;
         decltype(&CreateFile2) originalCreateFile2 = nullptr;
@@ -93,19 +101,67 @@ namespace bypass
             }
         }
 
+        bool HookedMount(void* pakPlatformFile, const wchar_t* pakFilename, std::uint32_t order, const wchar_t* mountPoint, bool loadIndex)
+        {
+            const bool mounted = originalMount(pakPlatformFile, pakFilename, order, mountPoint, loadIndex);
+            // Checked before building the record, so the game's own paks cost no allocation.
+            if (!mounted || pakFilename == nullptr || !IsInModsFolder(pakFilename)) return mounted;
+            try
+            {
+                mountLog->Record({ pakFilename, order, mountPoint ? std::optional<std::wstring>(mountPoint) : std::nullopt, loadIndex });
+            }
+            catch (const std::exception& error)
+            {
+                log::Error("A mod's mount was not recorded, so it won't be remounted after login:");
+                log::Error(error.what());
+            }
+            return mounted;
+        }
+
+        // Repeats the engine's first mount of the pak; the platform file is the one that just unmounted it.
+        void Remount(void* pakPlatformFile, std::wstring_view pak, UnmountVerdict verdict) noexcept
+        {
+            std::optional<MountCall> call;
+            try
+            {
+                call = mountLog->TakeForRemount(pak, std::chrono::steady_clock::now());
+            }
+            catch (const std::exception& error)
+            {
+                log::Error("Left a mod unmounted after an error:");
+                log::Error(error.what());
+                return;
+            }
+            if (!call)
+            {
+                LogUnmount("Left unmounted (first mount not seen, or remounted moments ago)", verdict, pak);
+                return;
+            }
+
+            const bool remounted = originalMount(pakPlatformFile, call->pakFilename.c_str(), call->order, call->MountPointOrNull(), call->loadIndex);
+            LogUnmount(remounted ? "Remounted" : "Remount failed", verdict, pak);
+        }
+
         bool HookedUnmount(void* pakPlatformFile, const wchar_t* pakFilename)
         {
             const std::wstring_view pak = pakFilename != nullptr ? pakFilename : L"";
             const UnmountVerdict verdict = DecideSafely(pak);
-            if (KeepsMounted(verdict))
+            if (!KeepsMounted(verdict))
             {
-                LogUnmount("Kept mounted", verdict, pak);
-                return false;
+                const bool unmounted = originalUnmount(pakPlatformFile, pakFilename);
+                if (verdict == UnmountVerdict::AllowGameplayMod) LogUnmount(unmounted ? "Unmounted" : "Unmount failed", verdict, pak);
+                return unmounted;
             }
 
-            const bool unmounted = originalUnmount(pakPlatformFile, pakFilename);
-            if (verdict == UnmountVerdict::AllowGameplayMod) LogUnmount(unmounted ? "Unmounted" : "Unmount failed", verdict, pak);
-            return unmounted;
+            if (modsAfterLogin == ModsAfterLogin::Keep) LogUnmount("Kept mounted", verdict, pak);
+            return HandleCosmeticUnmount(modsAfterLogin,
+                [&]
+                {
+                    const bool unmounted = originalUnmount(pakPlatformFile, pakFilename);
+                    if (!unmounted) LogUnmount("Unmount failed", verdict, pak);
+                    return unmounted;
+                },
+                [&] { Remount(pakPlatformFile, pak, verdict); });
         }
 
         void LogSkippedIntroVideo(std::wstring_view path) noexcept
@@ -188,27 +244,48 @@ namespace bypass
         return true;
     }
 
-    bool InstallUnmountGuard(const CodeRegion& text, const CodeRegion& rdata, const std::filesystem::path& gameDirectory)
+    bool InstallModsAfterLogin(ModsAfterLogin mode, const CodeRegion& text, const CodeRegion& rdata, const std::filesystem::path& gameDirectory)
     {
-        const Located target = LocatePakUnmount(text, rdata);
-        if (!target.Found())
+        const Located unmount = LocatePakUnmount(text, rdata);
+        if (!unmount.Found())
         {
-            const char* hint = target.error == LocateError::AlreadyHooked ? " (remove MarvelRivalsUnmountBlocker.asi)" : "";
-            log::Error(std::format("Unmount guard not installed: {}{}", Describe(target.error), hint));
+            const char* hint = unmount.error == LocateError::AlreadyHooked ? " (remove MarvelRivalsUnmountBlocker.asi)" : "";
+            log::Error(std::format("Mods will unload at login: unmount {}{}", Describe(unmount.error), hint));
             return false;
         }
 
+        const bool remount = mode == ModsAfterLogin::Remount;
+        const Located mount = remount ? LocatePakMount(text, rdata) : Located{};
+        if (remount && !mount.Found())
+        {
+            log::Error(std::format("Mods will unload at login: mount {}", Describe(mount.error)));
+            return false;
+        }
+
+        // The mount log and Mount hook exist only for Remount; Keep never reaches the code that uses them.
         auto policy = std::make_unique<ModPolicy>(gameDirectory);
+        auto mounts = remount ? std::make_unique<MountLog>() : nullptr;
         modPolicy = policy.get();
-        originalUnmount = reinterpret_cast<UnmountFn>(target.address);
-        if (!Detour(reinterpret_cast<void**>(&originalUnmount), reinterpret_cast<void*>(&HookedUnmount)))
+        mountLog = mounts.get();
+        modsAfterLogin = mode;
+        originalUnmount = reinterpret_cast<UnmountFn>(unmount.address);
+        if (remount) originalMount = reinterpret_cast<MountFn>(mount.address);
+        const Detoured unmountHook{ reinterpret_cast<void**>(&originalUnmount), reinterpret_cast<void*>(&HookedUnmount) };
+        const Detoured mountHook{ reinterpret_cast<void**>(&originalMount), reinterpret_cast<void*>(&HookedMount) };
+        if (!(remount ? Detour({ unmountHook, mountHook }) : Detour({ unmountHook })))
         {
             modPolicy = nullptr;
-            log::Error("Unmount guard not installed: hook failed");
+            mountLog = nullptr;
+            log::Error("Mods will unload at login: hook failed");
             return false;
         }
         policy.release();
-        log::Info(std::format("Unmount guard installed at {}", Address(text, target.address)));
+        mounts.release();
+
+        if (remount)
+            log::Info(std::format("Mod remount installed (unmount at {}, mount at {})", Address(text, unmount.address), Address(text, mount.address)));
+        else
+            log::Info(std::format("Unmount guard installed at {}", Address(text, unmount.address)));
         return true;
     }
 

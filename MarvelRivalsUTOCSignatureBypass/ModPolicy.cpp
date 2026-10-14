@@ -11,14 +11,6 @@ namespace bypass
 {
     namespace
     {
-        std::wstring NormalizeKey(std::wstring_view path)
-        {
-            std::wstring key(path);
-            std::ranges::replace(key, L'\\', L'/');
-            std::ranges::transform(key, key.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
-            return key;
-        }
-
         bool IsNormalizedModPath(std::wstring_view normalized) noexcept
         {
             return normalized.find(L"paks/~mods/") != std::wstring_view::npos;
@@ -39,6 +31,14 @@ namespace bypass
         }
     }
 
+    std::wstring NormalizePakPath(std::wstring_view path)
+    {
+        std::wstring key(path);
+        std::ranges::replace(key, L'\\', L'/');
+        std::ranges::transform(key, key.begin(), [](wchar_t c) { return static_cast<wchar_t>(std::towlower(c)); });
+        return key;
+    }
+
     std::string_view Describe(UnmountVerdict verdict) noexcept
     {
         switch (verdict)
@@ -55,7 +55,7 @@ namespace bypass
     {
         try
         {
-            return IsNormalizedModPath(NormalizeKey(pakPath));
+            return IsNormalizedModPath(NormalizePakPath(pakPath));
         }
         catch (const std::bad_alloc&)
         {
@@ -74,7 +74,7 @@ namespace bypass
 
     UnmountVerdict ModPolicy::Decide(std::wstring_view pakPath)
     {
-        const std::wstring key = NormalizeKey(pakPath);
+        const std::wstring key = NormalizePakPath(pakPath);
         {
             std::shared_lock read(cacheLock_);
             if (const auto found = cache_.find(key); found != cache_.end()) return found->second;

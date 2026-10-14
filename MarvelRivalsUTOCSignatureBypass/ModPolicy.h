@@ -24,6 +24,9 @@ namespace bypass
         return verdict == UnmountVerdict::KeepCosmeticMod || verdict == UnmountVerdict::KeepUnchecked;
     }
 
+    // Forward slashes and lower case, so the engine's differently spelled copies of one pak path compare equal.
+    [[nodiscard]] std::wstring NormalizePakPath(std::wstring_view path);
+
     // True for any path inside a Paks/~mods folder, in either slash style and any letter case.
     [[nodiscard]] bool IsInModsFolder(std::wstring_view pakPath) noexcept;
 

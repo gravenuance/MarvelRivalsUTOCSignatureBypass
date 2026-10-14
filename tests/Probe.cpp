@@ -149,13 +149,17 @@ int RunProbe(const wchar_t* executable)
     Report("FPakPlatformFile::Unmount", unmount, *text, MillisecondsSince(start));
 
     start = Clock::now();
+    const auto mount = bypass::LocatePakMount(*text, *rdata);
+    Report("FPakPlatformFile::Mount", mount, *text, MillisecondsSince(start));
+
+    start = Clock::now();
     const void* upstream = UpstreamSigScan("\xE8\x2A\x2A\x2A\x2A\x48\x8B\xF8\x39\x70\x2A\x0F\x84\x2A\x2A\x2A\x2A",
         "x????xxxxx?xx????", text->bytes.data(), text->bytes.size());
     std::printf("%-22s %s  (%.1f ms, upstream scan over .text)\n", "upstream sigScan",
         upstream != nullptr ? "found" : "not found", MillisecondsSince(start));
 
     FreeLibrary(mapped);
-    return signing.Found() && copies.size() <= 1 && unmount.Found() ? 0 : 1;
+    return signing.Found() && copies.size() <= 1 && unmount.Found() && mount.Found() ? 0 : 1;
 }
 
 int RunClassify(const wchar_t* paksDirectory)

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed
+- Mods after login are remounted rather than kept: the plugin lets the game's login unmount go ahead, then mounts each cosmetic mod again with the arguments the engine first used. A mod unmounted again within 10 seconds of its remount stays unmounted, so the plugin never loops against the game. This is Project Galacta's approach built in. Players reported bans for keeping mods mounted through login, and a refused unmount reports failure to the game.
+- `ModsAfterLogin=keep` in the ini restores the old behaviour, and `ModsAfterLogin=off` leaves the unmount alone.
+
+### Added
+- `Tests.exe --probe` also reports where `FPakPlatformFile::Mount` was found.
+
 ## [2.1.1] - 2026-10-01
 
 ### Added

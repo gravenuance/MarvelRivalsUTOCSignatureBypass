@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -86,6 +87,80 @@ TEST(LocatePakUnmountDetectsAnotherPluginsHook)
 {
     const Located found = Locate(UnmountWrapperCode(true, { 0xE9, 0x00, 0x00, 0x00, 0x00, 0x90, 0x90 }), RdataWithMarker(Marker));
     CHECK(found.error == LocateError::AlreadyHooked);
+}
+
+namespace
+{
+    constexpr std::size_t MountOffset = 0x40;
+    constexpr std::size_t MountMarkerLea = MountOffset + 0x2e4;  // Where the 2026-10-09 build loads "_P.pak".
+
+    const std::vector<std::uint8_t> RealMountPrologue = {
+        0x40, 0x55, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57, 0x48, 0x8D, 0xAC, 0x24, 0x08, 0xFE, 0xFF, 0xFF };
+
+    void PutLeaRdx(Buffer& text, std::size_t at)
+    {
+        text[at] = 0x48; text[at + 1] = 0x8D; text[at + 2] = 0x15;
+        PutInt32(text, at + 3, static_cast<std::int32_t>((RdataBase + MarkerOffset) - (TextBase + at + 7)));
+    }
+
+    // Mirrors the game: int3 padding, Mount's prologue, a body with lone 0xCC bytes, and `lea rdx, [marker]` 0x2e4 bytes in.
+    Buffer MountCode(const std::vector<std::uint8_t>& prologue, bool withReference)
+    {
+        Buffer text(0x400, 0x90);
+        std::fill_n(text.begin() + MountOffset - 4, 4, std::uint8_t{ 0xCC });
+        std::memcpy(text.data() + MountOffset, prologue.data(), prologue.size());
+        text[MountOffset + 0x80] = 0xCC;
+        text[MountOffset + 0x1c0] = 0xCC;
+        if (withReference) PutLeaRdx(text, MountMarkerLea);
+        return text;
+    }
+
+    Located LocateMount(const Buffer& text, const Buffer& rdata)
+    {
+        return LocatePakMount({ Bytes(text.data(), text.size()), TextBase }, { Bytes(rdata.data(), rdata.size()), RdataBase });
+    }
+}
+
+TEST(LocatePakMountWalksBackFromMarkerToPrologue)
+{
+    const Located found = LocateMount(MountCode(RealMountPrologue, true), RdataWithMarker(L"_P.pak"));
+    CHECK(found.Found());
+    CHECK(found.address == TextBase + MountOffset);
+}
+
+TEST(LocatePakMountReportsMissingMarkerAndReference)
+{
+    CHECK(LocateMount(MountCode(RealMountPrologue, true), RdataWithMarker(L".pak")).error == LocateError::MarkerMissing);
+    CHECK(LocateMount(MountCode(RealMountPrologue, false), RdataWithMarker(L"_P.pak")).error == LocateError::ReferenceMissing);
+}
+
+TEST(LocatePakMountRejectsChangedOrHookedPrologue)
+{
+    const Located changed = LocateMount(MountCode({ 0x48, 0x89, 0x5C, 0x24, 0x08 }, true), RdataWithMarker(L"_P.pak"));
+    CHECK(changed.error == LocateError::PrologueMismatch);
+    const Located hooked = LocateMount(MountCode({ 0xE9, 0x00, 0x00, 0x00, 0x00 }, true), RdataWithMarker(L"_P.pak"));
+    CHECK(hooked.error == LocateError::PrologueMismatch);
+}
+
+TEST(LocatePakMountRejectsReferencesInTwoFunctions)
+{
+    Buffer text = MountCode(RealMountPrologue, true);
+    constexpr std::size_t secondFunction = 0x340;
+    std::fill_n(text.begin() + secondFunction - 2, 2, std::uint8_t{ 0xCC });
+    std::memcpy(text.data() + secondFunction, RealMountPrologue.data(), RealMountPrologue.size());
+    PutLeaRdx(text, secondFunction + 0x40);
+    CHECK(LocateMount(text, RdataWithMarker(L"_P.pak")).error == LocateError::Ambiguous);
+}
+
+TEST(LocatePakMountRejectsAReferenceItCannotPlace)
+{
+    // A second reference in a function with another prologue, such as a copy of Mount inlined into a caller.
+    Buffer text = MountCode(RealMountPrologue, true);
+    constexpr std::size_t inliningCaller = 0x340;
+    std::fill_n(text.begin() + inliningCaller - 2, 2, std::uint8_t{ 0xCC });
+    text[inliningCaller] = 0x48; text[inliningCaller + 1] = 0x89; text[inliningCaller + 2] = 0x5C;
+    PutLeaRdx(text, inliningCaller + 0x40);
+    CHECK(LocateMount(text, RdataWithMarker(L"_P.pak")).error == LocateError::Ambiguous);
 }
 
 namespace

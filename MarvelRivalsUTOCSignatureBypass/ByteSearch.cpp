@@ -167,29 +167,50 @@ namespace bypass
         }
         encoded.insert(encoded.end(), { 0, 0 });
 
-        // UTF-16 literals are 2-byte aligned, so an odd hit is a false match straddling two characters.
+        // UTF-16 literals are 2-byte aligned, so an odd hit is a false match straddling two characters, and a hit
+        // not preceded by a terminator is the tail of a longer string.
         std::size_t from = 0;
         while (const auto found = FindBytes(data, encoded, from))
         {
-            if (*found % 2 == 0) return found;
+            const bool aligned = *found % 2 == 0;
+            if (aligned && (*found == 0 || (data[*found - 1] == 0 && data[*found - 2] == 0))) return found;
             from = *found + 1;
         }
         return std::nullopt;
     }
 
-    std::vector<std::uintptr_t> FindLeaRcxReferences(const CodeRegion& code, std::uintptr_t target)
+    std::vector<std::uintptr_t> FindLeaReferences(const CodeRegion& code, std::uintptr_t target, LeaRegister destination)
     {
-        static constexpr std::uint8_t leaRcxRip[3] = { 0x48, 0x8D, 0x0D };
+        const std::uint8_t leaRip[3] = { 0x48, 0x8D, static_cast<std::uint8_t>(destination) };
         constexpr std::size_t instructionLength = 7;
 
         std::vector<std::uintptr_t> references;
-        ForEachTriplet(code.bytes, leaRcxRip, [&](std::size_t found)
+        ForEachTriplet(code.bytes, leaRip, [&](std::size_t found)
         {
             if (code.bytes.size() - found < instructionLength) return;
             const std::uintptr_t next = code.base + found + instructionLength;
             if (next + static_cast<std::intptr_t>(ReadInt32(code.bytes, found + 3)) == target) references.push_back(code.base + found);
         });
         return references;
+    }
+
+    std::optional<std::uintptr_t> FindPaddedFunctionStart(
+        const CodeRegion& code, std::uintptr_t address, std::size_t window, Bytes prologue)
+    {
+        constexpr std::uint8_t int3 = 0xCC;
+        constexpr std::uintptr_t FunctionAlignment = 16;  // MSVC's default for x64 functions.
+        if (!code.Contains(address)) return std::nullopt;
+
+        const std::size_t offset = address - code.base;
+        const std::size_t lowest = offset > window ? offset - window : 0;
+        for (std::size_t at = offset; at >= lowest && at >= 2; --at)
+        {
+            if ((code.base + at) % FunctionAlignment != 0 || code.bytes[at - 1] != int3 || code.bytes[at - 2] != int3) continue;
+            const bool matches = code.bytes.size() - at >= prologue.size()
+                && std::equal(prologue.begin(), prologue.end(), code.bytes.begin() + static_cast<std::ptrdiff_t>(at));
+            return matches ? std::optional<std::uintptr_t>(code.base + at) : std::nullopt;
+        }
+        return std::nullopt;
     }
 
     std::optional<std::uintptr_t> FindJumpToPrologue(

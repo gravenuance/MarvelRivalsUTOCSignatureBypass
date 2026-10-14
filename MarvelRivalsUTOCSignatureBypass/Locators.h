@@ -41,4 +41,7 @@ namespace bypass
 
     // FPakPlatformFile::Unmount: NetEase's wrapper logs "Unmounting pak file" and tail-jumps into it.
     [[nodiscard]] Located LocatePakUnmount(const CodeRegion& text, const CodeRegion& rdata);
+
+    // FPakPlatformFile::Mount: the only code that loads the wide string "_P.pak" (into rdx, for its patch-order check).
+    [[nodiscard]] Located LocatePakMount(const CodeRegion& text, const CodeRegion& rdata);
 }

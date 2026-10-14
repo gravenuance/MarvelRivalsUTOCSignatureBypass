@@ -40,6 +40,15 @@ namespace
         return bypass::InstallIntroSkip() ? "on" : "off";
     }
 
+    std::string_view InstallModsAfterLoginUnlessOff(const bypass::Settings& settings, const bypass::CodeRegion& text,
+        const bypass::CodeRegion& rdata, const std::filesystem::path& gameDirectory)
+    {
+        using bypass::ModsAfterLogin;
+        if (settings.modsAfterLogin == ModsAfterLogin::Unload) return "off";
+        if (!bypass::InstallModsAfterLogin(settings.modsAfterLogin, text, rdata, gameDirectory)) return "failed";
+        return settings.modsAfterLogin == ModsAfterLogin::Remount ? "remount" : "keep";
+    }
+
     // Runs inside DllMain on purpose: the engine checks pak signatures during startup, before any later hook point.
     void Start(HMODULE self)
     {
@@ -66,10 +75,10 @@ namespace
         }
 
         const bool signatureBypass = InstallSigningKeysBypass(*text);
-        const bool unmountGuard = InstallUnmountGuard(*text, *rdata, gamePath.parent_path());
+        const std::string_view modsAfterLogin = InstallModsAfterLoginUnlessOff(loaded.settings, *text, *rdata, gamePath.parent_path());
         const std::string_view introSkip = InstallIntroSkipUnlessDisabled(loaded.settings);
-        log::Info(std::format("Startup finished in {:.0f} ms (signature bypass {}, unmount guard {}, intro skip {})",
-            ElapsedMilliseconds(start), signatureBypass ? "on" : "off", unmountGuard ? "on" : "off", introSkip));
+        log::Info(std::format("Startup finished in {:.0f} ms (signature bypass {}, mods after login {}, intro skip {})",
+            ElapsedMilliseconds(start), signatureBypass ? "on" : "off", modsAfterLogin, introSkip));
     }
 }
 

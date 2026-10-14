@@ -1,9 +1,9 @@
 # MarvelRivalsUTOCSignatureBypass
 
-An ASI plugin for Marvel Rivals that lets client-side cosmetic mods load and stay loaded.
+An ASI plugin for Marvel Rivals that lets client-side cosmetic mods load and keeps them loaded after login.
 
 - **Signature bypass.** The game accepts mod containers (`.pak`/`.utoc`/`.ucas`) that are not signed.
-- **Unmount guard.** Since the September 2026 update the game unmounts everything in `Paks/~mods` during login. The plugin refuses that unmount for cosmetic mods, so they stay loaded. This replaces both `MarvelRivalsUnmountBlocker.asi` and Project Galacta's remount step.
+- **Mods after login.** Since the September 2026 update the game unmounts everything in `Paks/~mods` during login. The plugin lets that happen and then mounts each cosmetic mod again, the same way the engine first mounted it. This is Project Galacta's approach, built into the plugin, so you don't need Galacta.
 - **Intro skip.** The NetEase, Marvel and Unreal logo videos at startup are skipped.
 
 Fork of [DeathChaos25/MarvelRivalsUTOCSignatureBypass](https://github.com/DeathChaos25/MarvelRivalsUTOCSignatureBypass) ([Nexus page](https://www.nexusmods.com/marvelrivals/mods/2940)).
@@ -13,51 +13,63 @@ Fork of [DeathChaos25/MarvelRivalsUTOCSignatureBypass](https://github.com/DeathC
 Needs an ASI loader (for example `dsound.dll` in `MarvelGame/Marvel/Binaries/Win64`).
 
 1. Put `MarvelRivalsUTOCSignatureBypass.asi` in `MarvelGame/Marvel/Binaries/Win64/plugins`.
-2. Remove `MarvelRivalsUnmountBlocker.asi` if you have it. Both hook the same function, and this plugin stands down if the other got there first.
+2. Remove `MarvelRivalsUnmountBlocker.asi` if you have it. It hooks the same function, and this plugin stands down if the other got there first.
 3. Put mods in `MarvelGame/Marvel/Content/Paks/~mods` (subfolders are fine).
 
-Project Galacta's menu still works alongside this plugin, but you don't need Galacta for mods to load.
-
-To keep the intro videos, put a `MarvelRivalsUTOCSignatureBypass.ini` next to the ASI:
+Settings go in an optional `MarvelRivalsUTOCSignatureBypass.ini` next to the ASI:
 
 ```ini
 [Settings]
 Version=1
-SkipIntroVideos=0
+; 0 keeps the intro videos (default 1: skip them)
+SkipIntroVideos=1
+; remount (default), keep, or off
+ModsAfterLogin=remount
 ```
 
-Without the file, or without the key, intro videos are skipped.
+A missing file or key uses the default.
 
-## Which mods stay loaded
+## Mods after login
 
-Every pak under `Paks/~mods` is kept, **except** a container whose `.utoc` lists `AbilitySystem` or `CameraShake` assets. Those can change gameplay, so the game is allowed to unmount them. This is the same rule Project Galacta uses.
+During login the game unmounts every pak in `Paks/~mods`. `ModsAfterLogin` decides what happens next:
 
-A pak whose contents can't be checked is kept too: no `.utoc` next to it, a `.utoc` that can't be read or is over 64 MB, or one whose asset names are encrypted.
+- **`remount`** (default): the unmount goes ahead, and right after it the plugin mounts the mod again with the same arguments the engine used at startup, so load order is unchanged. If the game unmounts a mod again within 10 seconds of remounting it, the plugin lets that unmount stand rather than fight over it, and the log says so. A later login, such as after a disconnect, is remounted as usual.
+- **`keep`**: the plugin refuses the unmount, so mods never leave. This is what `MarvelRivalsUnmountBlocker.asi` did. Players have reported bans for it, and a refused unmount reports failure back to the game.
+- **`off`**: the game's unmount goes ahead and mods are gone until the next start.
+
+In every mode the game can list which paks are mounted and what's inside them ([findings](docs/re-findings.md)). Nothing confirms that it acts on that list, but remounted or kept mods are visible to it. Use mods online at your own risk.
+
+### Which mods are remounted or kept
+
+Every pak under `Paks/~mods`, **except** a container whose `.utoc` lists `AbilitySystem` or `CameraShake` assets. Those can change gameplay, so they stay unmounted. This is the same rule Project Galacta uses.
+
+A pak whose contents can't be checked counts as cosmetic: no `.utoc` next to it, a `.utoc` that can't be read or is over 64 MB, or one whose asset names are encrypted.
 
 ## Log
 
 Everything the plugin does goes to `MarvelRivalsUTOCSignatureBypass.log` next to the ASI. The previous run's log is kept as `.log.1`. A healthy start looks like:
 
 ```
-INFO  Signature bypass installed at .text+0xf0a870
-INFO  Unmount guard installed at .text+0x1a17690
+INFO  Signature bypass installed at .text+0xf26700
+INFO  Mod remount installed (unmount at .text+0x1a3b7a0, mount at .text+0x1a2e720)
 INFO  Intro skip installed
-INFO  Startup finished in … ms (signature bypass on, unmount guard on, intro skip on)
+INFO  Startup finished in … ms (signature bypass on, mods after login remount, intro skip on)
 INFO  Skipped intro video: …\MarvelGame\Marvel\Content\Marvel\MoviesBink\Movies\MarvelLogo\COMMON\MarvelLogoVideo_Common.bk2
-INFO  Kept mounted (cosmetic mod): ../../../Marvel/Content/Paks/~mods/zSkin_9999999_P.pak
+INFO  Remounted (cosmetic mod): ../../../Marvel/Content/Paks/~mods/zSkin_9999999_P.pak
 ```
 
-If a game update moves things, the log says which lookup failed and why, and that part is skipped rather than guessed.
+If a game update moves things, the log says which lookup failed and why, and that part is skipped rather than guessed. If a lookup for mods after login fails, nothing is hooked and mods unload at login as they would without the plugin.
 
 ## How it works
 
-Both game hooks are located at runtime, not from hard-coded addresses.
+The game hooks are located at runtime, not from hard-coded addresses.
 
 - **Signing keys:** upstream's byte pattern at the call site of the function that returns the pak signing keys. The hook returns an empty key list. The pattern must match exactly once, and the function it calls must look like the engine's getter (a guarded static it returns the address of), or nothing is hooked.
-- **Unmount:** NetEase's pak-unmount wrapper logs `Unmounting pak file: %s` and then jumps into the engine's `FPakPlatformFile::Unmount`. The plugin finds that string, the code that references it, and the jump, and checks the target's first bytes before hooking it.
+- **Unmount** (`remount` and `keep`): NetEase's pak-unmount wrapper logs `Unmounting pak file: %s` and then jumps into the engine's `FPakPlatformFile::Unmount`. The plugin finds that string, the code that references it, and the jump, and checks the target's first bytes before hooking it.
+- **Mount** (`remount` only): `FPakPlatformFile::Mount` is the only code that loads the string `_P.pak`. The plugin finds that reference, walks back to the start of the function (the nearest double int3 padding), and checks its first bytes. From startup on, the hook records how the engine mounts each pak in `~mods`, then replays that call after the login unmount.
 - **Intro skip:** the game picks its logo videos from a data table, so no ini setting turns them off, and the game's integrity check may restore deleted files. Instead the plugin hooks the Windows file functions (`CreateFileW`, `CreateFile2`, `GetFileAttributesW`, `GetFileAttributesExW` in KernelBase) and reports anything under `MoviesBink/Movies/MarvelLogo/` as not found. Every other file, including the lobby videos, passes straight through.
 
-Why hook `Unmount` rather than remount afterwards like Galacta? Every unmount, whatever triggers it, goes through that one function, and the hook sees the engine's own result. Refusing it means mods are never missing even for a moment, and nothing depends on timing or on the login screen's widget names. The engine's mount function has no "already mounted" check, so blind remounting risks mounting a pak twice.
+Galacta remounts from a Blueprint once it sees that login has finished. The plugin remounts inside the unmount call instead: the engine tells it exactly which pak just left, and replaying the engine's own mount call keeps the original load order without guessing it.
 
 ## Build
 

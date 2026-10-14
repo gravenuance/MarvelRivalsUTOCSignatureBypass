@@ -112,21 +112,58 @@ TEST(FindWideStringNeedsTerminatorAndAlignment)
     CHECK(FindWideString(data, L"Hi!") == std::optional<std::size_t>(8));
 }
 
-TEST(FindLeaRcxReferencesResolvesRipRelativeTargets)
+TEST(FindWideStringSkipsTheTailOfALongerString)
 {
-    Buffer code(64, 0x90);
+    Buffer data;
+    for (const wchar_t c : std::wstring(L"ab_P.pak")) { data.push_back(static_cast<std::uint8_t>(c)); data.push_back(0); }
+    data.insert(data.end(), { 0, 0 });
+    for (const wchar_t c : std::wstring(L"_P.pak")) { data.push_back(static_cast<std::uint8_t>(c)); data.push_back(0); }
+    data.insert(data.end(), { 0, 0 });
+
+    CHECK(FindWideString(data, L"_P.pak") == std::optional<std::size_t>(18));
+    CHECK(FindWideString(data, L"ab_P.pak") == std::optional<std::size_t>(0));
+}
+
+TEST(FindLeaReferencesResolvesRipRelativeTargets)
+{
+    Buffer code(80, 0x90);
     const std::uintptr_t base = 0x1000;
     const std::uintptr_t target = 0x800;  // Before the code, so the displacement is negative.
 
-    code[4] = 0x48; code[5] = 0x8D; code[6] = 0x0D;
+    code[4] = 0x48; code[5] = 0x8D; code[6] = 0x0D;  // lea rcx
     PutInt32(code, 7, static_cast<std::int32_t>(target - (base + 4 + 7)));
     code[20] = 0x48; code[21] = 0x8D; code[22] = 0x0D;
     PutInt32(code, 23, 0x1234);
-    code[60] = 0x48; code[61] = 0x8D; code[62] = 0x0D;  // Truncated: no room for the displacement.
+    code[40] = 0x48; code[41] = 0x8D; code[42] = 0x15;  // lea rdx, same target
+    PutInt32(code, 43, static_cast<std::int32_t>(target - (base + 40 + 7)));
+    code[76] = 0x48; code[77] = 0x8D; code[78] = 0x0D;  // Truncated: no room for the displacement.
 
-    const auto references = FindLeaRcxReferences(Region(code, base), target);
-    CHECK(references.size() == 1);
-    CHECK(references[0] == base + 4);
+    const auto rcx = FindLeaReferences(Region(code, base), target, LeaRegister::Rcx);
+    CHECK(rcx.size() == 1);
+    CHECK(rcx[0] == base + 4);
+    const auto rdx = FindLeaReferences(Region(code, base), target, LeaRegister::Rdx);
+    CHECK(rdx.size() == 1);
+    CHECK(rdx[0] == base + 40);
+}
+
+TEST(FindPaddedFunctionStartStopsAtNearestPadding)
+{
+    Buffer code(96, 0x90);
+    const std::uint8_t prologue[] = { 0x40, 0x55, 0x53 };
+    code[14] = 0xCC; code[15] = 0xCC;
+    std::memcpy(code.data() + 16, prologue, sizeof prologue);  // Function start, 16-byte aligned like MSVC's.
+    code[24] = 0xCC;                   // A lone 0xCC inside an instruction is not a boundary,
+    code[37] = 0xCC; code[38] = 0xCC;  // and neither is a double one (an imm32 of 0xCCCCCCCC) before an unaligned address.
+
+    const auto region = Region(code);
+    CHECK(FindPaddedFunctionStart(region, region.base + 60, 60, prologue) == std::optional<std::uintptr_t>(region.base + 16));
+    CHECK(FindPaddedFunctionStart(region, region.base + 16, 0, prologue) == std::optional<std::uintptr_t>(region.base + 16));
+    CHECK(!FindPaddedFunctionStart(region, region.base + 60, 43, prologue));
+    CHECK(!FindPaddedFunctionStart(region, region.base + 200, 300, prologue));
+
+    // A later function whose prologue changed: the walk stops at its padding instead of reaching the one before it.
+    code[46] = 0xCC; code[47] = 0xCC; code[48] = 0x48;
+    CHECK(!FindPaddedFunctionStart(region, region.base + 60, 60, prologue));
 }
 
 TEST(FindJumpToPrologueRespectsWindowAndRegion)

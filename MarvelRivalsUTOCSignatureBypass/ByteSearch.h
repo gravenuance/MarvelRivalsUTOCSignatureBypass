@@ -48,8 +48,22 @@ namespace bypass
     // Offset of the wide string (including its terminator) inside a data region.
     [[nodiscard]] std::optional<std::size_t> FindWideString(Bytes data, std::wstring_view text);
 
-    // Addresses of every `lea rcx, [rip+disp32]` whose operand resolves to target.
-    [[nodiscard]] std::vector<std::uintptr_t> FindLeaRcxReferences(const CodeRegion& code, std::uintptr_t target);
+    // ModRM byte of `lea r64, [rip+disp32]` for each destination register the locators need.
+    enum class LeaRegister : std::uint8_t
+    {
+        Rcx = 0x0D,
+        Rdx = 0x15,
+    };
+
+    // Addresses of every `lea <destination>, [rip+disp32]` whose operand resolves to target.
+    [[nodiscard]] std::vector<std::uintptr_t> FindLeaReferences(const CodeRegion& code, std::uintptr_t target, LeaRegister destination);
+
+    // Start of the function containing `address`: the nearest 16-byte aligned point within window bytes that follows two
+    // int3 padding bytes. 0xCC also occurs inside instructions, singly or doubled, but rarely right before an aligned
+    // address. Fails, rather than searching further,
+    // when that start does not begin with the prologue, so a changed function can't be mistaken for an earlier one.
+    [[nodiscard]] std::optional<std::uintptr_t> FindPaddedFunctionStart(
+        const CodeRegion& code, std::uintptr_t address, std::size_t window, Bytes prologue);
 
     // First `jmp rel32` in the window after `from` whose destination starts with the expected prologue.
     [[nodiscard]] std::optional<std::uintptr_t> FindJumpToPrologue(
