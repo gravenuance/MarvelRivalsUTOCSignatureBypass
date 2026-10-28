@@ -1,12 +1,14 @@
 #pragma once
 #include <chrono>
 #include <cstdint>
+#include <exception>
 #include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 
+#include "ModPolicy.h"
 #include "Settings.h"
 
 namespace bypass
@@ -48,6 +50,29 @@ namespace bypass
         std::mutex lock_;
         std::unordered_map<std::wstring, Entry> entries_;
     };
+
+    // What the Mount hook does: calls the engine's Mount, records the call if the pak is in Paks/~mods, and returns
+    // Mount's result unchanged. The call is recorded even when Mount returns false: for a pak with no .utoc (audio
+    // mods, typically) the engine adds the pak to its mounted list, then reports false because it finds no IoStore
+    // container. A pak that really failed to mount is never unmounted, so its record is never used.
+    // A failure to record goes to onRecordError, and Mount's result is still returned.
+    template <typename Log, typename Mount, typename OnRecordError>
+    bool MountAndRecord(Log& log, const wchar_t* pakFilename, std::uint32_t order, const wchar_t* mountPoint, bool loadIndex,
+        Mount&& mount, OnRecordError&& onRecordError)
+    {
+        const bool mounted = mount();
+        // Checked before building the record, so the game's own paks cost no allocation.
+        if (pakFilename == nullptr || !IsInModsFolder(pakFilename)) return mounted;
+        try
+        {
+            log.Record({ pakFilename, order, mountPoint ? std::optional<std::wstring>(mountPoint) : std::nullopt, loadIndex });
+        }
+        catch (const std::exception& error)
+        {
+            onRecordError(error);
+        }
+        return mounted;
+    }
 
     // What the unmount hook does with a cosmetic mod: Keep refuses (false), Remount unmounts and, only if that
     // succeeded, remounts and reports success, and Unload just unmounts. The caller sees the returned value.

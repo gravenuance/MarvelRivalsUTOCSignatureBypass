@@ -56,3 +56,19 @@ A single IoStore mod (`!ProjectGalacta_9999999_P`); no native code. Read from it
 | Only reference to wide `_P.pak` | `lea rdx` at `0x1a2fa04`, string `0xa846198` | 0x2e4 bytes into Mount. No `CC CC` between the start and it, two single `CC` bytes inside instructions | confirmed |
 | Python `MountPak` / `MountPakWithMountPoint` | `0x7dfc640` / `0x7dfc3f0` | Both call the helper `0x7e16430`, which looks up the platform file and calls Mount | confirmed |
 | `Tests.exe --probe` on this build | — | `FPakPlatformFile::Mount .text+0x1a2e720` (= RVA `0x1a2f720`) | confirmed |
+
+## Mount's return value for a pak with no `.utoc`
+
+Binary: `Marvel-Win64-Shipping.exe`, 308,987,392 bytes, dated 2026-10-23 (Steam),
+SHA-256 `62e3cb096fd7cdaa88a8718e9c9682ee4d8b8ac7266b586b72b1865e13675657`. Analysed 2026-10-28, same tools.
+
+| Claim | Address | Evidence | Status |
+|---|---|---|---|
+| `FPakPlatformFile::Mount` on this build | `0x1a70c90` | `Tests.exe --probe`: `.text+0x1a6fc90` | confirmed |
+| Mount adds the pak to the mounted list at `this+0x10` before it looks for the `.utoc` | `0x1a70c90` | The array append and refcount bump come before the `this+0x128` IoStore branch | confirmed |
+| With no `.utoc`, Mount returns false but leaves the pak mounted | `0x1a70c90` | `FileExists(path + ".utoc")` (vtable `+0x78`) fails, the result flag is cleared and `IoStore container "%s" not found` (`0x14ab46fd0`) is logged; nothing removes the pak from `this+0x10` | confirmed |
+| A pak-only mod's content is used even so | — | Audio mods (pak-only, `~mods/audio`) played in 2.1.x, when the unmount was refused | confirmed (in game) |
+
+2.2.0's Mount hook recorded only calls that returned true, so pak-only mods were never recorded and stayed
+unmounted after login. The plugin log on 2026-10-25 and 2026-10-27 shows `Left unmounted (first mount not seen ...)`
+for all 14 audio paks and `Remounted` for every mod that has a `.utoc`.

@@ -103,19 +103,13 @@ namespace bypass
 
         bool HookedMount(void* pakPlatformFile, const wchar_t* pakFilename, std::uint32_t order, const wchar_t* mountPoint, bool loadIndex)
         {
-            const bool mounted = originalMount(pakPlatformFile, pakFilename, order, mountPoint, loadIndex);
-            // Checked before building the record, so the game's own paks cost no allocation.
-            if (!mounted || pakFilename == nullptr || !IsInModsFolder(pakFilename)) return mounted;
-            try
-            {
-                mountLog->Record({ pakFilename, order, mountPoint ? std::optional<std::wstring>(mountPoint) : std::nullopt, loadIndex });
-            }
-            catch (const std::exception& error)
-            {
-                log::Error("A mod's mount was not recorded, so it won't be remounted after login:");
-                log::Error(error.what());
-            }
-            return mounted;
+            return MountAndRecord(*mountLog, pakFilename, order, mountPoint, loadIndex,
+                [&] { return originalMount(pakPlatformFile, pakFilename, order, mountPoint, loadIndex); },
+                [](const std::exception& error)
+                {
+                    log::Error("A mod's mount was not recorded, so it won't be remounted after login:");
+                    log::Error(error.what());
+                });
         }
 
         // Repeats the engine's first mount of the pak; the platform file is the one that just unmounted it.
@@ -139,7 +133,12 @@ namespace bypass
             }
 
             const bool remounted = originalMount(pakPlatformFile, call->pakFilename.c_str(), call->order, call->MountPointOrNull(), call->loadIndex);
-            LogUnmount(remounted ? "Remounted" : "Remount failed", verdict, pak);
+            // Mount reports false for a pak with no .utoc even though the pak is mounted. KeepUnchecked also covers an
+            // unreadable .utoc, where false is a real failure, so the line says what was returned rather than guessing.
+            const char* outcome = remounted ? "Remounted"
+                : verdict == UnmountVerdict::KeepUnchecked ? "Remount returned false (expected for a pak without .utoc)"
+                : "Remount failed";
+            LogUnmount(outcome, verdict, pak);
         }
 
         bool HookedUnmount(void* pakPlatformFile, const wchar_t* pakFilename)
