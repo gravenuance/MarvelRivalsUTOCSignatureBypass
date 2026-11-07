@@ -184,7 +184,7 @@ int RunClassify(const wchar_t* paksDirectory)
     {
         const auto verdict = policy.Decide(pak.wstring());
         ++counts[verdict];
-        if (verdict == bypass::UnmountVerdict::AllowGameplayMod) std::printf("  gameplay: %ls\n", pak.filename().c_str());
+        if (verdict == bypass::UnmountVerdict::AllowGameplayMod) std::printf("  gameplay: %ls\n", pak.filename().wstring().c_str());
     }
     const double firstPass = MillisecondsSince(start);
 
