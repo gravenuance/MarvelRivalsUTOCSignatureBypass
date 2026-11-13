@@ -1,0 +1,15 @@
+# Compile flags for clangd, mirroring Directory.Build.props and the .vcxproj files.
+# Without these, clangd parses the code as an older C++ standard and reports false errors.
+# Paths are relative to each source file's folder (MarvelRivalsUTOCSignatureBypass/ and tests/).
+CompileFlags:
+  Compiler: clang-cl
+  Add:
+    - /std:c++20
+    - /EHsc
+    - /W4
+    - /permissive-
+    - /DNOMINMAX
+    - /DUNICODE
+    - /D_UNICODE
+    - /D_WINDOWS
+    - -I../external/Detours/src

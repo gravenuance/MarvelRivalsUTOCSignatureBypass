@@ -72,3 +72,12 @@ SHA-256 `62e3cb096fd7cdaa88a8718e9c9682ee4d8b8ac7266b586b72b1865e13675657`. Anal
 2.2.0's Mount hook recorded only calls that returned true, so pak-only mods were never recorded and stayed
 unmounted after login. The plugin log on 2026-10-25 and 2026-10-27 shows `Left unmounted (first mount not seen ...)`
 for all 14 audio paks and `Remounted` for every mod that has a `.utoc`.
+
+## 2026-11-13 update
+
+Binary: `Marvel-Win64-Shipping.exe`, 307,753,472 bytes, dated 2026-11-13 (Steam),
+SHA-256 `13a564a16588f65a7fd005f31bc08eb538555f3985dfa5801a313a8d9029d307`.
+
+`Tests.exe --probe` (built from `a2719f8`) finds every hook with no code change: signing keys delegate
+`.text+0xf69210` (one inlined getter copy, `.text+0xf775a0`), `Unmount` `.text+0x1a7e2e0`, `Mount` `.text+0x1a722b0`.
+`MoviesBink/Movies/MarvelLogo/` still exists. Not yet checked in game.
