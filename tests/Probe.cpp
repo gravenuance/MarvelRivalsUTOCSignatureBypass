@@ -119,9 +119,10 @@ int RunProbe(const wchar_t* executable)
 
     const auto text = bypass::FindSection(image, ".text");
     const auto rdata = bypass::FindSection(image, ".rdata");
-    if (!text || !rdata)
+    const auto data = bypass::FindSection(image, ".data");
+    if (!text || !rdata || !data)
     {
-        std::fprintf(stderr, "No .text/.rdata section in %ls\n", executable);
+        std::fprintf(stderr, "No .text/.rdata/.data section in %ls\n", executable);
         FreeLibrary(mapped);
         return 2;
     }
@@ -149,7 +150,7 @@ int RunProbe(const wchar_t* executable)
 
     // The other form of the same hook: the build whose getter is inlined everywhere keeps a binder to hook instead.
     start = Clock::now();
-    const auto binder = bypass::LocateSigningKeysBinder(*text, *rdata);
+    const auto binder = bypass::LocateSigningKeysBinder(*text, *rdata, *data);
     Report("signing keys binder", binder.function, *text, MillisecondsSince(start));
     if (binder.function.Found())
         std::printf("  delegate size at rva %#llx\n",

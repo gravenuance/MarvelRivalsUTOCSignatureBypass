@@ -68,13 +68,14 @@ namespace
         const HMODULE game = GetModuleHandleW(nullptr);
         const auto text = FindSection(game, ".text");
         const auto rdata = FindSection(game, ".rdata");
-        if (!text || !rdata)
+        const auto data = FindSection(game, ".data");
+        if (!text || !rdata || !data)
         {
             log::Error("Game code sections not found; nothing installed");
             return;
         }
 
-        const bool signatureBypass = InstallSigningKeysBypass(*text, *rdata);
+        const bool signatureBypass = InstallSigningKeysBypass(*text, *rdata, *data);
         const std::string_view modsAfterLogin = InstallModsAfterLoginUnlessOff(loaded.settings, *text, *rdata, gamePath.parent_path());
         const std::string_view introSkip = InstallIntroSkipUnlessDisabled(loaded.settings);
         log::Info(std::format("Startup finished in {:.0f} ms (signature bypass {}, mods after login {}, intro skip {})",

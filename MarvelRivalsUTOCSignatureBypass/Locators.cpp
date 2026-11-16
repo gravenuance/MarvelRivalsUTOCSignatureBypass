@@ -61,6 +61,7 @@ namespace bypass
         case LocateError::AlreadyHooked: return "already hooked by another plugin";
         case LocateError::Ambiguous: return "pattern matches more than once";
         case LocateError::CountUnmatched: return "no candidate marks the delegate size the check reads";
+        case LocateError::CountOutsideData: return "the delegate size is outside the game's writable data";
         case LocateError::TargetOutsideCode: return "call target is outside the code section";
         case LocateError::UnexpectedTarget: return "call target is not the signing-keys getter";
         }
@@ -101,7 +102,7 @@ namespace bypass
         return { *target, {} };
     }
 
-    LocatedBinder LocateSigningKeysBinder(const CodeRegion& text, const CodeRegion& rdata)
+    LocatedBinder LocateSigningKeysBinder(const CodeRegion& text, const CodeRegion& rdata, const CodeRegion& data)
     {
         // The binder: `push rsi; sub rsp, 20h; mov rsi, rcx`, the guarded-static preamble, then the count it marks
         // bound. Two functions share it, so a match alone identifies nothing.
@@ -145,6 +146,11 @@ namespace bypass
             found = { { text.base + match, {} }, count };
         }
         if (!found.function.Found()) return { { 0, LocateError::CountUnmatched } };
+
+        // The hook writes through this address, so it has to be somewhere the game keeps writable data. Everything
+        // feeding it comes from the game's own code, not from any mod or ini, so this cannot be steered from outside;
+        // it is here so that a future rebuild that moves things resolves to a clear failure instead of a stray write.
+        if (!data.Contains(found.count, sizeof(std::int32_t))) return { { 0, LocateError::CountOutsideData } };
         return found;
     }
 

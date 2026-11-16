@@ -6,8 +6,9 @@
 
 namespace bypass
 {
-    // Lets unsigned mod containers load, by whichever of the two builds' forms the game's code matches.
-    [[nodiscard]] bool InstallSigningKeysBypass(const CodeRegion& text, const CodeRegion& rdata);
+    // Lets unsigned mod containers load, by whichever of the two builds' forms the game's code matches. data is where
+    // the binder form's count must live, since that hook writes through it.
+    [[nodiscard]] bool InstallSigningKeysBypass(const CodeRegion& text, const CodeRegion& rdata, const CodeRegion& data);
 
     // Brings cosmetic mods in Paks/~mods through the game's login unmount: Remount mounts each one again right after,
     // Keep refuses the unmount. Must run before the engine mounts the mods, so Remount sees how it mounted them.

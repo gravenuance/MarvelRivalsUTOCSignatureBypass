@@ -15,6 +15,7 @@ namespace bypass
         AlreadyHooked,
         Ambiguous,
         CountUnmatched,
+        CountOutsideData,
         TargetOutsideCode,
         UnexpectedTarget,
     };
@@ -51,7 +52,10 @@ namespace bypass
 
     // The binder that binds the pak signing-keys delegate, for builds whose getter is inlined away. Two functions share
     // its prologue, so the count each marks bound is matched against the one the TOC reader's signature check reads.
-    [[nodiscard]] LocatedBinder LocateSigningKeysBinder(const CodeRegion& text, const CodeRegion& rdata);
+    // The count must also land inside data, because the hook writes through it: an unknown build then fails here
+    // rather than writing somewhere unintended.
+    [[nodiscard]] LocatedBinder LocateSigningKeysBinder(const CodeRegion& text, const CodeRegion& rdata,
+        const CodeRegion& data);
 
     // FPakPlatformFile::Unmount: NetEase's wrapper logs "Unmounting pak file" and tail-jumps into it.
     [[nodiscard]] Located LocatePakUnmount(const CodeRegion& text, const CodeRegion& rdata);

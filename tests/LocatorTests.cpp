@@ -402,10 +402,22 @@ namespace
         return text;
     }
 
-    LocatedBinder LocateBinder(const Buffer& text, const Buffer& rdata)
+    // A .data standing in for the game's, placed so that both CheckedCount and NeighbourCount fall inside it.
+    constexpr std::uintptr_t BinderDataBase = CheckedCount - 0x1000;
+    constexpr std::size_t BinderDataSize = 0x2000;
+
+    LocatedBinder LocateBinder(const Buffer& text, const Buffer& rdata, const Buffer& data)
     {
         return LocateSigningKeysBinder({ Bytes(text.data(), text.size()), BinderTextBase },
-            { Bytes(rdata.data(), rdata.size()), BinderRdataBase });
+            { Bytes(rdata.data(), rdata.size()), BinderRdataBase },
+            { Bytes(data.data(), data.size()), BinderDataBase });
+    }
+
+    // The default data region: wide enough to hold every count the binder tests use.
+    LocatedBinder LocateBinder(const Buffer& text, const Buffer& rdata)
+    {
+        const Buffer data(BinderDataSize, 0x00);
+        return LocateBinder(text, rdata, data);
     }
 }
 
@@ -433,6 +445,18 @@ TEST(LocateSigningKeysBinderRefusesWhenTwoCandidatesMarkTheCheckedCount)
 {
     const Buffer text = BinderCode(CheckedCount, CheckedCount, CheckedCount);
     CHECK(LocateBinder(text, RdataWithMarker(L"Missing signature")).function.error == LocateError::Ambiguous);
+}
+
+TEST(LocateSigningKeysBinderRefusesACountOutsideTheDataSection)
+{
+    // The binder and the signature check agree on a size global, but it does not lie in .data — how a future build that
+    // moved it could look. The hook writes through that address, so this has to fail instead of installing.
+    const Buffer text = BinderCode(NeighbourCount, CheckedCount, CheckedCount);
+    const Buffer tooSmall(0x100, 0x00);  // starts at BinderDataBase, so it ends well short of CheckedCount
+    const LocatedBinder found = LocateBinder(text, RdataWithMarker(L"Missing signature"), tooSmall);
+    CHECK(!found.function.Found());
+    CHECK(found.function.error == LocateError::CountOutsideData);
+    CHECK(found.count == 0);
 }
 
 TEST(LocateSigningKeysBinderReportsAMissingPrologueMarkerAndReference)
