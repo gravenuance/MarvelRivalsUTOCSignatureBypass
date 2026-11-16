@@ -69,36 +69,22 @@ namespace bypass
 
     std::optional<DelegateStatic> ReadSigningKeysGetter(const CodeRegion& text, std::uintptr_t getter)
     {
-        // Both encodings of the guard test, `cmp [guard], eax` and `cmp dword [guard], -1`; the disp32 sits at offset 2
-        // in each, but they are not the same length.
-        struct GuardCompare
-        {
-            std::optional<BytePattern> pattern;
-            std::size_t length;
-        };
-        static const GuardCompare guardCompares[] = {
-            { BytePattern::Parse("39 05 ?? ?? ?? ??"), 6 },
-            { BytePattern::Parse("83 3D ?? ?? ?? ?? FF"), 7 },
-        };
+        // `cmp [guard], eax`, the only form either shipped build uses in the guard position: the MSVC getter's
+        // `cmp dword [guard], -1` belongs to its lazy-init path and falls outside GetterWindow, and the clang build
+        // reaches the keys through the binder instead. Accepting only this form keeps the check before a detour tight.
+        static const auto guardCompare = BytePattern::Parse("39 05 ?? ?? ?? ??");
+        constexpr std::size_t GuardCompareLength = 6;
         static const auto returnDelegate = BytePattern::Parse("48 8D 05 ?? ?? ?? ?? 48 83 C4 ?? C3");
 
         if (!text.Contains(getter, GetterWindow)) return std::nullopt;
         const Bytes window = text.bytes.subspan(getter - text.base, GetterWindow);
         if (!FindBytes(window, ThreadLocalBaseRead)) return std::nullopt;
 
-        std::optional<std::size_t> compare;
-        std::size_t compareLength = 0;
-        for (const GuardCompare& form : guardCompares)
-        {
-            const auto matches = FindAllPattern(window, *form.pattern);
-            if (matches.empty() || (compare && *compare <= matches.front())) continue;
-            compare = matches.front();
-            compareLength = form.length;
-        }
-
+        const auto compares = FindAllPattern(window, *guardCompare);
         const auto returns = FindAllPattern(window, *returnDelegate);
-        if (!compare || returns.empty() || *compare > returns.front()) return std::nullopt;
-        return DelegateStatic{ RipTarget(text, getter + returns.front(), 3, 7), RipTarget(text, getter + *compare, 2, compareLength) };
+        if (compares.empty() || returns.empty() || compares.front() > returns.front()) return std::nullopt;
+        return DelegateStatic{ RipTarget(text, getter + returns.front(), 3, 7),
+            RipTarget(text, getter + compares.front(), 2, GuardCompareLength) };
     }
 
     Located LocateSigningKeysDelegate(const CodeRegion& text)
@@ -136,10 +122,12 @@ namespace bypass
         std::vector<std::uintptr_t> checked;
         for (const std::uintptr_t reference : references)
         {
+            // Clamped at both ends: deriving the length from the window instead would reach 2 * SignatureCheckWindow
+            // forward for a marker load near the start of .text, past the function the span is meant to cover.
             const std::size_t at = reference - text.base;
             const std::size_t start = at > SignatureCheckWindow ? at - SignatureCheckWindow : 0;
-            const std::size_t length = std::min(text.bytes.size() - start, 2 * SignatureCheckWindow);
-            const CodeRegion window{ text.bytes.subspan(start, length), text.base + start };
+            const std::size_t end = std::min(text.bytes.size(), at + SignatureCheckWindow);
+            const CodeRegion window{ text.bytes.subspan(start, end - start), text.base + start };
             for (const std::size_t site : FindAllPattern(window.bytes, *countCheck))
                 checked.push_back(RipTarget(window, window.base + site, 2, CountCheckLength));
         }

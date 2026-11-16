@@ -228,8 +228,8 @@ namespace
         0xC3,                                                  // ret
     };
 
-    // The same getter with the other guard compare seen in guarded-static getters, `cmp dword [guard], -1`. It is one
-    // byte longer than `cmp [guard], eax`, so the displacements after it are shifted to resolve to the same statics.
+    // The same getter with `cmp dword [guard], -1` in place of `cmp [guard], eax`, used to assert that this form is
+    // NOT accepted. It is one byte longer, so the displacements after it are shifted to resolve to the same statics.
     // The initialisation tail is left off: it sits past the window the getter is read through.
     const std::vector<std::uint8_t> MinusOneGuardGetter = {
         0x48, 0x83, 0xEC, 0x28,                                // sub rsp, 28h
@@ -300,13 +300,14 @@ TEST(ReadSigningKeysGetterFindsDelegateAndGuard)
     CHECK(getter->guard == 0x14F8488D0);
 }
 
-TEST(ReadSigningKeysGetterAcceptsAGuardComparedAgainstMinusOne)
+// Deliberately narrow: a getter whose only guard compare is `cmp dword [guard], -1` is rejected. That form belongs
+// to the MSVC getter's lazy-init tail, which falls outside GetterWindow, and the clang build reaches the keys through
+// the binder, so nothing shipped relies on accepting it. Keeping the check tight matters because what it accepts is
+// what gets detoured.
+TEST(ReadSigningKeysGetterRejectsAGuardComparedAgainstMinusOne)
 {
     const Buffer text = SigningKeysCode(MinusOneGuardGetter);
-    const auto getter = ReadSigningKeysGetter(Region(text), RealGetterAddress);
-    CHECK(getter.has_value());
-    CHECK(getter->delegate == 0x14F8488C0);
-    CHECK(getter->guard == 0x14F8488D0);
+    CHECK(!ReadSigningKeysGetter(Region(text), RealGetterAddress).has_value());
 }
 
 TEST(LocateSigningKeysRejectsTargetThatIsNotTheGetter)
