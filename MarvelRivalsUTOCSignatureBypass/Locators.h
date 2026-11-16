@@ -10,9 +10,11 @@ namespace bypass
     {
         MarkerMissing,
         ReferenceMissing,
+        PrologueMissing,
         PrologueMismatch,
         AlreadyHooked,
         Ambiguous,
+        CountUnmatched,
         TargetOutsideCode,
         UnexpectedTarget,
     };

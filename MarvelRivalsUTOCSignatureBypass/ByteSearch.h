@@ -65,16 +65,19 @@ namespace bypass
     [[nodiscard]] std::vector<std::uintptr_t> FindRipReferences(
         const CodeRegion& code, const BytePattern& pattern, std::size_t dispOffset, std::uintptr_t target);
 
+    // Both searches below take every accepted form of the function's first bytes and try them in the order given, so
+    // one plugin build recognises a function compiled by either of the compilers the game has shipped from.
+
     // Start of the function containing `address`: the nearest 16-byte aligned point within window bytes that follows two
     // int3 padding bytes. 0xCC also occurs inside instructions, singly or doubled, but rarely right before an aligned
     // address. Fails, rather than searching further,
-    // when that start does not begin with the prologue, so a changed function can't be mistaken for an earlier one.
+    // when that start begins with none of the prologues, so a changed function can't be mistaken for an earlier one.
     [[nodiscard]] std::optional<std::uintptr_t> FindPaddedFunctionStart(
-        const CodeRegion& code, std::uintptr_t address, std::size_t window, Bytes prologue);
+        const CodeRegion& code, std::uintptr_t address, std::size_t window, std::span<const Bytes> prologues);
 
-    // First `jmp rel32` in the window after `from` whose destination starts with the expected prologue.
+    // First `jmp rel32` in the window after `from` whose destination starts with one of the prologues.
     [[nodiscard]] std::optional<std::uintptr_t> FindJumpToPrologue(
-        const CodeRegion& code, std::uintptr_t from, std::size_t window, Bytes prologue);
+        const CodeRegion& code, std::uintptr_t from, std::size_t window, std::span<const Bytes> prologues);
 
     // Destination of the `call rel32` at address.
     [[nodiscard]] std::optional<std::uintptr_t> ResolveCallTarget(const CodeRegion& code, std::uintptr_t address);

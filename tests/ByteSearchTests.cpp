@@ -1,3 +1,4 @@
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <vector>
@@ -176,26 +177,42 @@ TEST(FindPaddedFunctionStartStopsAtNearestPadding)
 {
     Buffer code(96, 0x90);
     const std::uint8_t prologue[] = { 0x40, 0x55, 0x53 };
+    const std::array<Bytes, 1> prologues = { Bytes(prologue) };
     code[14] = 0xCC; code[15] = 0xCC;
     std::memcpy(code.data() + 16, prologue, sizeof prologue);  // Function start, 16-byte aligned like MSVC's.
     code[24] = 0xCC;                   // A lone 0xCC inside an instruction is not a boundary,
     code[37] = 0xCC; code[38] = 0xCC;  // and neither is a double one (an imm32 of 0xCCCCCCCC) before an unaligned address.
 
     const auto region = Region(code);
-    CHECK(FindPaddedFunctionStart(region, region.base + 60, 60, prologue) == std::optional<std::uintptr_t>(region.base + 16));
-    CHECK(FindPaddedFunctionStart(region, region.base + 16, 0, prologue) == std::optional<std::uintptr_t>(region.base + 16));
-    CHECK(!FindPaddedFunctionStart(region, region.base + 60, 43, prologue));
-    CHECK(!FindPaddedFunctionStart(region, region.base + 200, 300, prologue));
+    CHECK(FindPaddedFunctionStart(region, region.base + 60, 60, prologues) == std::optional<std::uintptr_t>(region.base + 16));
+    CHECK(FindPaddedFunctionStart(region, region.base + 16, 0, prologues) == std::optional<std::uintptr_t>(region.base + 16));
+    CHECK(!FindPaddedFunctionStart(region, region.base + 60, 43, prologues));
+    CHECK(!FindPaddedFunctionStart(region, region.base + 200, 300, prologues));
 
     // A later function whose prologue changed: the walk stops at its padding instead of reaching the one before it.
     code[46] = 0xCC; code[47] = 0xCC; code[48] = 0x48;
-    CHECK(!FindPaddedFunctionStart(region, region.base + 60, 60, prologue));
+    CHECK(!FindPaddedFunctionStart(region, region.base + 60, 60, prologues));
+}
+
+TEST(FindPaddedFunctionStartAcceptsAnyKnownPrologue)
+{
+    Buffer code(96, 0x90);
+    const std::uint8_t msvc[] = { 0x40, 0x55, 0x53 };
+    const std::uint8_t clang[] = { 0x41, 0x57, 0x41 };
+    const std::array<Bytes, 2> prologues = { Bytes(msvc), Bytes(clang) };
+    code[14] = 0xCC; code[15] = 0xCC;
+    std::memcpy(code.data() + 16, clang, sizeof clang);  // The second form still has to be recognised.
+
+    const auto region = Region(code);
+    CHECK(FindPaddedFunctionStart(region, region.base + 60, 60, prologues) == std::optional<std::uintptr_t>(region.base + 16));
+    CHECK(!FindPaddedFunctionStart(region, region.base + 60, 60, std::array<Bytes, 1>{ Bytes(msvc) }));
 }
 
 TEST(FindJumpToPrologueRespectsWindowAndRegion)
 {
     Buffer code(96, 0xCC);
     const std::uint8_t prologue[] = { 0x48, 0x8B, 0xC4 };
+    const std::array<Bytes, 1> prologues = { Bytes(prologue) };
     std::memcpy(code.data() + 80, prologue, sizeof prologue);
     code[10] = 0xE9;
     PutInt32(code, 11, 80 - 15);
@@ -203,9 +220,24 @@ TEST(FindJumpToPrologueRespectsWindowAndRegion)
     PutInt32(code, 31, 0x100000);  // Destination outside the region.
 
     const auto region = Region(code);
-    CHECK(FindJumpToPrologue(region, region.base, 32, prologue) == std::optional<std::uintptr_t>(region.base + 80));
-    CHECK(!FindJumpToPrologue(region, region.base, 10, prologue));
-    CHECK(!FindJumpToPrologue(region, region.base + 20, 32, prologue));
+    CHECK(FindJumpToPrologue(region, region.base, 32, prologues) == std::optional<std::uintptr_t>(region.base + 80));
+    CHECK(!FindJumpToPrologue(region, region.base, 10, prologues));
+    CHECK(!FindJumpToPrologue(region, region.base + 20, 32, prologues));
+}
+
+TEST(FindJumpToPrologueAcceptsAnyKnownPrologue)
+{
+    Buffer code(96, 0xCC);
+    const std::uint8_t msvc[] = { 0x48, 0x8B, 0xC4 };
+    const std::uint8_t clang[] = { 0x41, 0x57, 0x41 };
+    std::memcpy(code.data() + 80, clang, sizeof clang);
+    code[10] = 0xE9;
+    PutInt32(code, 11, 80 - 15);
+
+    const auto region = Region(code);
+    const std::array<Bytes, 2> prologues = { Bytes(msvc), Bytes(clang) };
+    CHECK(FindJumpToPrologue(region, region.base, 32, prologues) == std::optional<std::uintptr_t>(region.base + 80));
+    CHECK(!FindJumpToPrologue(region, region.base, 32, std::array<Bytes, 1>{ Bytes(msvc) }));
 }
 
 TEST(ResolveCallTargetChecksOpcodeAndRange)

@@ -260,33 +260,25 @@ namespace bypass
     bool InstallSigningKeysBypass(const CodeRegion& text, const CodeRegion& rdata)
     {
         const Located getter = LocateSigningKeysDelegate(text);
-        if (getter.Found())
+        // The binder is the build whose getter is inlined away, so looking for it at all means the getter is absent.
+        const LocatedBinder binder = getter.Found() ? LocatedBinder{} : LocateSigningKeysBinder(text, rdata);
+        if (!getter.Found() && !binder.function.Found())
         {
-            if (!InstallGetterBypass(getter.address))
-            {
-                log::Error("Signature bypass not installed: hook failed");
-                return false;
-            }
-            log::Info(std::format("Signature bypass installed at {}", Address(text, getter.address)));
-            return true;
+            log::Error(std::format("Signature bypass not installed: getter {}, delegate binder {}",
+                Describe(getter.error), Describe(binder.function.error)));
+            return false;
         }
 
-        const LocatedBinder binder = LocateSigningKeysBinder(text, rdata);
-        if (binder.function.Found())
+        if (!(getter.Found() ? InstallGetterBypass(getter.address) : InstallBinderBypass(binder)))
         {
-            if (!InstallBinderBypass(binder))
-            {
-                log::Error("Signature bypass not installed: hook failed");
-                return false;
-            }
-            log::Info(std::format("Signature bypass installed at {} (clang delegate binder)",
-                Address(text, binder.function.address)));
-            return true;
+            log::Error("Signature bypass not installed: hook failed");
+            return false;
         }
 
-        log::Error(std::format("Signature bypass not installed: getter {}, delegate binder {}",
-            Describe(getter.error), Describe(binder.function.error)));
-        return false;
+        log::Info(getter.Found()
+            ? std::format("Signature bypass installed at {}", Address(text, getter.address))
+            : std::format("Signature bypass installed at {} (clang delegate binder)", Address(text, binder.function.address)));
+        return true;
     }
 
     bool InstallModsAfterLogin(ModsAfterLogin mode, const CodeRegion& text, const CodeRegion& rdata, const std::filesystem::path& gameDirectory)

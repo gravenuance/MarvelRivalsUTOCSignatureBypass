@@ -46,6 +46,17 @@ namespace bypass
             return { 0x48, 0x8D, 0x0D };
         }
 
+        // Whether the bytes at offset begin with any of the prologues, tried in the order given.
+        bool StartsWithAnyPrologue(Bytes bytes, std::size_t offset, std::span<const Bytes> prologues) noexcept
+        {
+            if (offset > bytes.size()) return false;
+            return std::any_of(prologues.begin(), prologues.end(), [&](Bytes prologue)
+            {
+                return bytes.size() - offset >= prologue.size()
+                    && std::equal(prologue.begin(), prologue.end(), bytes.begin() + static_cast<std::ptrdiff_t>(offset));
+            });
+        }
+
         char ToLowerAscii(std::uint8_t c) noexcept
         {
             return static_cast<char>(c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c);
@@ -224,7 +235,7 @@ namespace bypass
     }
 
     std::optional<std::uintptr_t> FindPaddedFunctionStart(
-        const CodeRegion& code, std::uintptr_t address, std::size_t window, Bytes prologue)
+        const CodeRegion& code, std::uintptr_t address, std::size_t window, std::span<const Bytes> prologues)
     {
         constexpr std::uint8_t int3 = 0xCC;
         constexpr std::uintptr_t FunctionAlignment = 16;  // MSVC's default for x64 functions.
@@ -235,15 +246,14 @@ namespace bypass
         for (std::size_t at = offset; at >= lowest && at >= 2; --at)
         {
             if ((code.base + at) % FunctionAlignment != 0 || code.bytes[at - 1] != int3 || code.bytes[at - 2] != int3) continue;
-            const bool matches = code.bytes.size() - at >= prologue.size()
-                && std::equal(prologue.begin(), prologue.end(), code.bytes.begin() + static_cast<std::ptrdiff_t>(at));
-            return matches ? std::optional<std::uintptr_t>(code.base + at) : std::nullopt;
+            if (!StartsWithAnyPrologue(code.bytes, at, prologues)) return std::nullopt;
+            return code.base + at;
         }
         return std::nullopt;
     }
 
     std::optional<std::uintptr_t> FindJumpToPrologue(
-        const CodeRegion& code, std::uintptr_t from, std::size_t window, Bytes prologue)
+        const CodeRegion& code, std::uintptr_t from, std::size_t window, std::span<const Bytes> prologues)
     {
         constexpr std::uint8_t jmpRel32 = 0xE9;
         constexpr std::size_t jumpLength = 5;
@@ -253,9 +263,8 @@ namespace bypass
             const std::size_t offset = at - code.base;
             if (code.bytes[offset] != jmpRel32) continue;
             const std::uintptr_t destination = at + jumpLength + static_cast<std::intptr_t>(ReadInt32(code.bytes, offset + 1));
-            if (!code.Contains(destination, prologue.size())) continue;
-            if (std::equal(prologue.begin(), prologue.end(), code.bytes.begin() + static_cast<std::ptrdiff_t>(destination - code.base)))
-                return destination;
+            if (!code.Contains(destination)) continue;
+            if (StartsWithAnyPrologue(code.bytes, destination - code.base, prologues)) return destination;
         }
         return std::nullopt;
     }

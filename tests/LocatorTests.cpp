@@ -424,7 +424,7 @@ TEST(LocateSigningKeysBinderRefusesWhenNoCandidateMarksTheCheckedCount)
     const Buffer text = BinderCode(CheckedCount + 0x100, CheckedCount + 0x200, CheckedCount);
     const LocatedBinder found = LocateBinder(text, RdataWithMarker(L"Missing signature"));
     CHECK(!found.function.Found());
-    CHECK(found.function.error == LocateError::Ambiguous);
+    CHECK(found.function.error == LocateError::CountUnmatched);
     CHECK(found.count == 0);
 }
 
@@ -436,12 +436,19 @@ TEST(LocateSigningKeysBinderRefusesWhenTwoCandidatesMarkTheCheckedCount)
 
 TEST(LocateSigningKeysBinderReportsAMissingPrologueMarkerAndReference)
 {
-    const Buffer none(0x800, 0xCC);
-    CHECK(LocateBinder(none, RdataWithMarker(L"Missing signature")).function.error == LocateError::MarkerMissing);
-
     const Buffer text = BinderCode(NeighbourCount, CheckedCount, CheckedCount);
     CHECK(LocateBinder(text, RdataWithMarker(L"Missing signatures")).function.error == LocateError::MarkerMissing);
 
     const Buffer noLoad = BinderCode(NeighbourCount, CheckedCount, CheckedCount, false);
     CHECK(LocateBinder(noLoad, RdataWithMarker(L"Missing signature")).function.error == LocateError::ReferenceMissing);
+
+    // Nothing at all in .text: the marker's load is what is missing first, so that is what the log has to say.
+    const Buffer none(0x800, 0xCC);
+    CHECK(LocateBinder(none, RdataWithMarker(L"Missing signature")).function.error == LocateError::ReferenceMissing);
+
+    // The marker and its load are there, but no function opens with the binder's prologue, as after a recompile.
+    Buffer noBinder = text;
+    std::fill_n(noBinder.begin() + FirstBinderOffset, BinderPrologue.size(), std::uint8_t{ 0xCC });
+    std::fill_n(noBinder.begin() + SecondBinderOffset, BinderPrologue.size(), std::uint8_t{ 0xCC });
+    CHECK(LocateBinder(noBinder, RdataWithMarker(L"Missing signature")).function.error == LocateError::PrologueMissing);
 }

@@ -9,6 +9,8 @@ namespace bypass
     namespace
     {
         constexpr std::uint8_t JumpOpcode[] = { 0xE9 };
+        // A function whose first byte is a jump has had its entry patched, so a jump is the "prologue" to look for.
+        constexpr std::array<Bytes, 1> JumpPrologue = { Bytes(JumpOpcode) };
         constexpr std::size_t LeaLength = 7;
         constexpr std::size_t TailJumpWindow = 0x60;
         constexpr std::size_t GetterWindow = 0x40;
@@ -54,9 +56,11 @@ namespace bypass
         {
         case LocateError::MarkerMissing: return "marker not found";
         case LocateError::ReferenceMissing: return "no code references the marker";
+        case LocateError::PrologueMissing: return "no function starts with the expected prologue";
         case LocateError::PrologueMismatch: return "function start does not match";
         case LocateError::AlreadyHooked: return "already hooked by another plugin";
         case LocateError::Ambiguous: return "pattern matches more than once";
+        case LocateError::CountUnmatched: return "no candidate marks the delegate size the check reads";
         case LocateError::TargetOutsideCode: return "call target is outside the code section";
         case LocateError::UnexpectedTarget: return "call target is not the signing-keys getter";
         }
@@ -122,9 +126,7 @@ namespace bypass
         static const auto markerLoad = BytePattern::Parse("C5 FE 6F 05 ?? ?? ?? ??");
         static const auto countCheck = BytePattern::Parse("83 3D ?? ?? ?? ?? 00");
 
-        const auto matches = FindAllPattern(text.bytes, *binder);
-        if (matches.empty()) return { { 0, LocateError::MarkerMissing } };
-
+        // The marker lookups come first: either can fail, and they cost a fraction of the binder scan over all of .text.
         const auto marker = FindWideString(rdata.bytes, L"Missing signature");
         if (!marker) return { { 0, LocateError::MarkerMissing } };
         const auto references = FindRipReferences(text, *markerLoad, MarkerLoadDisplacement, rdata.base + *marker);
@@ -142,6 +144,9 @@ namespace bypass
                 checked.push_back(RipTarget(window, window.base + site, 2, CountCheckLength));
         }
 
+        const auto matches = FindAllPattern(text.bytes, *binder);
+        if (matches.empty()) return { { 0, LocateError::PrologueMissing } };
+
         // The binder to hook is the one whose count the check reads; anything else is a sibling delegate's binder.
         LocatedBinder found{};
         for (const std::size_t match : matches)
@@ -151,7 +156,7 @@ namespace bypass
             if (found.function.Found()) return { { 0, LocateError::Ambiguous } };
             found = { { text.base + match, {} }, count };
         }
-        if (!found.function.Found()) return { { 0, LocateError::Ambiguous } };
+        if (!found.function.Found()) return { { 0, LocateError::CountUnmatched } };
         return found;
     }
 
@@ -165,17 +170,14 @@ namespace bypass
 
         for (const std::uintptr_t reference : references)
         {
-            for (const Bytes prologue : UnmountPrologues)
-            {
-                if (const auto unmount = FindJumpToPrologue(text, reference + LeaLength, TailJumpWindow, prologue))
-                    return { *unmount, {} };
-            }
+            if (const auto unmount = FindJumpToPrologue(text, reference + LeaLength, TailJumpWindow, UnmountPrologues))
+                return { *unmount, {} };
         }
 
         // A jump that lands on another jump means something else already patched the function's entry.
         for (const std::uintptr_t reference : references)
         {
-            if (FindJumpToPrologue(text, reference + LeaLength, TailJumpWindow, JumpOpcode)) return { 0, LocateError::AlreadyHooked };
+            if (FindJumpToPrologue(text, reference + LeaLength, TailJumpWindow, JumpPrologue)) return { 0, LocateError::AlreadyHooked };
         }
         return { 0, LocateError::PrologueMismatch };
     }
@@ -196,12 +198,7 @@ namespace bypass
         bool unplaced = false;
         for (const std::uintptr_t reference : references)
         {
-            std::optional<std::uintptr_t> start;
-            for (const Bytes prologue : MountPrologues)
-            {
-                start = FindPaddedFunctionStart(text, reference, MountStartWindow, prologue);
-                if (start) break;
-            }
+            const auto start = FindPaddedFunctionStart(text, reference, MountStartWindow, MountPrologues);
             if (!start) unplaced = true;
             else if (mount && *mount != *start) return { 0, LocateError::Ambiguous };
             else mount = start;
