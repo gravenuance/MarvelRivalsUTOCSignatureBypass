@@ -366,3 +366,9 @@ build/
 
 # Backups an editing hook writes beside changed files
 *.bak
+
+# Claude's own files never ship with the repo
+CLAUDE.md
+CLAUDE.local.md
+.claude/
+.mcp.json
