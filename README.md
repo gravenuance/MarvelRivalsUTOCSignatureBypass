@@ -8,7 +8,7 @@ An ASI plugin for Marvel Rivals that lets client-side cosmetic mods load and kee
 
 Fork of [DeathChaos25/MarvelRivalsUTOCSignatureBypass](https://github.com/DeathChaos25/MarvelRivalsUTOCSignatureBypass) ([Nexus page](https://www.nexusmods.com/marvelrivals/mods/2940)).
 
-Credit to the author of [UTOC Signature Bypass (Performance DLC Compatible)](https://www.nexusmods.com/marvelrivals/mods/14652) on Nexus, whose plugin identified the same hook target on the "Experimental In-Game Performance" DLC build independently. The code here is written from this project's own analysis of the game executable ([findings](docs/re-findings.md)).
+Credit to 0xSaturn, author of [UTOC Signature Bypass (Performance DLC Compatible)](https://www.nexusmods.com/marvelrivals/mods/14652) on Nexus, whose plugin identified the same hook target on the "Experimental In-Game Performance" DLC build independently. The code here is written from this project's own analysis of the game executable ([findings](docs/re-findings.md)).
 
 ## Install
 
