@@ -8,6 +8,8 @@ An ASI plugin for Marvel Rivals that lets client-side cosmetic mods load and kee
 
 Fork of [DeathChaos25/MarvelRivalsUTOCSignatureBypass](https://github.com/DeathChaos25/MarvelRivalsUTOCSignatureBypass) ([Nexus page](https://www.nexusmods.com/marvelrivals/mods/2940)).
 
+Credit to the author of [UTOC Signature Bypass (Performance DLC Compatible)](https://www.nexusmods.com/marvelrivals/mods/14652) on Nexus, whose plugin identified the same hook target on the "Experimental In-Game Performance" DLC build independently. The code here is written from this project's own analysis of the game executable ([findings](docs/re-findings.md)).
+
 ## Install
 
 Needs an ASI loader (for example `dsound.dll` in `MarvelGame/Marvel/Binaries/Win64`).
@@ -64,7 +66,7 @@ If a game update moves things, the log says which lookup failed and why, and tha
 
 The game hooks are located at runtime, not from hard-coded addresses.
 
-- **Signing keys:** upstream's byte pattern at the call site of the function that returns the pak signing keys. The hook returns an empty key list. The pattern must match exactly once, and the function it calls must look like the engine's getter (a guarded static it returns the address of), or nothing is hooked.
+- **Signing keys:** the game ships from two compilers, which keep the keys in different places, so the plugin tries both forms and installs whichever one the executable matches. Which form matched is also what tells the two clients apart; there is no version check. On the base game it is upstream's byte pattern at the call site of the function that returns the pak signing keys, and the hook returns an empty key list; the pattern must match exactly once, and the function it calls must look like the engine's getter (a guarded static it returns the address of). On the DLC build that getter is compiled into its callers, so the plugin hooks the function that binds the signing keys, lets it run, and then marks the delegate unbound, which is what the callers read as "no keys". Two functions there share the binder's first bytes, so the plugin keeps the one that marks the same state the engine's signature check reads, found from the `Missing signature` message, and hooks nothing if that leaves anything but one candidate.
 - **Unmount** (`remount` and `keep`): NetEase's pak-unmount wrapper logs `Unmounting pak file: %s` and then jumps into the engine's `FPakPlatformFile::Unmount`. The plugin finds that string, the code that references it, and the jump, and checks the target's first bytes before hooking it.
 - **Mount** (`remount` only): `FPakPlatformFile::Mount` is the only code that loads the string `_P.pak`. The plugin finds that reference, walks back to the start of the function (the nearest double int3 padding), and checks its first bytes. From startup on, the hook records how the engine mounts each pak in `~mods`, then replays that call after the login unmount.
 - **Intro skip:** the game picks its logo videos from a data table, so no ini setting turns them off, and the game's integrity check may restore deleted files. Instead the plugin hooks the Windows file functions (`CreateFileW`, `CreateFile2`, `GetFileAttributesW`, `GetFileAttributesExW` in KernelBase) and reports anything under `MoviesBink/Movies/MarvelLogo/` as not found. Every other file, including the lobby videos, passes straight through.
@@ -96,7 +98,7 @@ gh attestation verify MarvelRivalsUTOCSignatureBypass.asi -R gravenuance/MarvelR
 
 Two read-only checks against a real install:
 
-- `Tests.exe --probe <path to Marvel-Win64-Shipping.exe>` runs both lookups against the game executable without running it, and prints where they land and how long they take. It also counts code that has its own inlined copy of the signing-keys getter; more than one copy (the function that registers the real keys) means some code could read the keys past the hook. Use it to check a new game build before launching.
+- `Tests.exe --probe <path to Marvel-Win64-Shipping.exe>` runs every lookup against the game executable without running it, and prints where they land and how long they take. It reports both signing-keys forms, so the output also says which client the file is. On the base game it counts code that has its own inlined copy of the signing-keys getter; more than one copy (the function that registers the real keys) means some code could read the keys past the hook. Use it to check a new game build before launching.
 - `Tests.exe --classify <path to Content\Paks>` runs the mod rules over everything in `~mods` and prints how each pak would be treated.
 
 ## License

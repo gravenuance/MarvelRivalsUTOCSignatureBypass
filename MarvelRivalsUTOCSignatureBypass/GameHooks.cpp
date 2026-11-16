@@ -28,14 +28,19 @@ namespace bypass
         };
 
         using SigningKeysFn = PakSigningKeys* (*)();
+        // The clang build's binder takes what it binds in rcx and returns the delegate's storage; the other three
+        // register arguments are forwarded untouched so the call stays faithful whatever that build does with them.
+        using BindSigningKeysFn = void* (*)(void* bound, void* second, void* third, void* fourth);
         using UnmountFn = bool (*)(void* pakPlatformFile, const wchar_t* pakFilename);
         // Five arguments: both of the game's callers set exactly these (rcx, rdx, r8d, r9, [rsp+20h]) on the 2026-10-09 build.
         using MountFn = bool (*)(void* pakPlatformFile, const wchar_t* pakFilename, std::uint32_t order, const wchar_t* mountPoint, bool loadIndex);
 
         SigningKeysFn originalSigningKeys = nullptr;
+        BindSigningKeysFn originalBindSigningKeys = nullptr;
         UnmountFn originalUnmount = nullptr;
         MountFn originalMount = nullptr;
         PakSigningKeys noSigningKeys{};
+        std::int32_t* signingKeySize = nullptr;
 
         // Live for the whole process: the engine can call the hooks until the moment it exits.
         ModPolicy* modPolicy = nullptr;
@@ -72,6 +77,32 @@ namespace bypass
         {
             noSigningKeys = {};
             return &noSigningKeys;
+        }
+
+        // Where the getter is inlined, the engine reads the delegate's size straight from a global. Binding leaves it
+        // at 2; zeroing it afterwards leaves every one of those reads seeing an unbound delegate, that is, no keys.
+        // The binder itself still runs, because callers use the storage it returns and the writes it makes.
+        void* HookedBindSigningKeys(void* bound, void* second, void* third, void* fourth)
+        {
+            void* const storage = originalBindSigningKeys(bound, second, third, fourth);
+            *signingKeySize = 0;
+            return storage;
+        }
+
+        bool InstallGetterBypass(std::uintptr_t getter)
+        {
+            originalSigningKeys = reinterpret_cast<SigningKeysFn>(getter);
+            return Detour(reinterpret_cast<void**>(&originalSigningKeys), reinterpret_cast<void*>(&HookedSigningKeys));
+        }
+
+        bool InstallBinderBypass(const LocatedBinder& binder)
+        {
+            signingKeySize = reinterpret_cast<std::int32_t*>(binder.count);
+            originalBindSigningKeys = reinterpret_cast<BindSigningKeysFn>(binder.function.address);
+            if (Detour(reinterpret_cast<void**>(&originalBindSigningKeys), reinterpret_cast<void*>(&HookedBindSigningKeys)))
+                return true;
+            signingKeySize = nullptr;
+            return false;
         }
 
         // The policy only throws on allocation failure; fall back to the folder rule, which cannot.
@@ -224,23 +255,38 @@ namespace bypass
         }
     }
 
-    bool InstallSigningKeysBypass(const CodeRegion& text)
+    // The two game builds keep the signing keys in different places, so each form is tried and whichever verifies is
+    // hooked: which one matches says which client is running, so no build detection is needed.
+    bool InstallSigningKeysBypass(const CodeRegion& text, const CodeRegion& rdata)
     {
-        const Located target = LocateSigningKeysDelegate(text);
-        if (!target.Found())
+        const Located getter = LocateSigningKeysDelegate(text);
+        if (getter.Found())
         {
-            log::Error(std::format("Signature bypass not installed: {}", Describe(target.error)));
-            return false;
+            if (!InstallGetterBypass(getter.address))
+            {
+                log::Error("Signature bypass not installed: hook failed");
+                return false;
+            }
+            log::Info(std::format("Signature bypass installed at {}", Address(text, getter.address)));
+            return true;
         }
 
-        originalSigningKeys = reinterpret_cast<SigningKeysFn>(target.address);
-        if (!Detour(reinterpret_cast<void**>(&originalSigningKeys), reinterpret_cast<void*>(&HookedSigningKeys)))
+        const LocatedBinder binder = LocateSigningKeysBinder(text, rdata);
+        if (binder.function.Found())
         {
-            log::Error("Signature bypass not installed: hook failed");
-            return false;
+            if (!InstallBinderBypass(binder))
+            {
+                log::Error("Signature bypass not installed: hook failed");
+                return false;
+            }
+            log::Info(std::format("Signature bypass installed at {} (clang delegate binder)",
+                Address(text, binder.function.address)));
+            return true;
         }
-        log::Info(std::format("Signature bypass installed at {}", Address(text, target.address)));
-        return true;
+
+        log::Error(std::format("Signature bypass not installed: getter {}, delegate binder {}",
+            Describe(getter.error), Describe(binder.function.error)));
+        return false;
     }
 
     bool InstallModsAfterLogin(ModsAfterLogin mode, const CodeRegion& text, const CodeRegion& rdata, const std::filesystem::path& gameDirectory)

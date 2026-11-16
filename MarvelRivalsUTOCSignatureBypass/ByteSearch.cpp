@@ -1,6 +1,7 @@
 #include "ByteSearch.h"
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <functional>
 #include <intrin.h>
@@ -32,6 +33,19 @@ namespace bypass
             return value;
         }
 
+        // REX prefix, opcode and ModRM byte of `lea <destination>, [rip+disp32]`. Reaching r8 sets REX.R, so its form
+        // differs from the rcx and rdx ones in the prefix as well as in the ModRM byte.
+        std::array<std::uint8_t, 3> LeaRipBytes(LeaRegister destination) noexcept
+        {
+            switch (destination)
+            {
+            case LeaRegister::Rcx: return { 0x48, 0x8D, 0x0D };
+            case LeaRegister::Rdx: return { 0x48, 0x8D, 0x15 };
+            case LeaRegister::R8: return { 0x4C, 0x8D, 0x05 };
+            }
+            return { 0x48, 0x8D, 0x0D };
+        }
+
         char ToLowerAscii(std::uint8_t c) noexcept
         {
             return static_cast<char>(c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c);
@@ -39,7 +53,7 @@ namespace bypass
 
         // Calls onMatch for every offset where the three bytes occur in sequence, testing 16 offsets per SSE2 step.
         template <class OnMatch>
-        void ForEachTriplet(Bytes haystack, const std::uint8_t (&triplet)[3], OnMatch onMatch)
+        void ForEachTriplet(Bytes haystack, const std::array<std::uint8_t, 3>& triplet, OnMatch onMatch)
         {
             if (haystack.size() < 3) return;
             const std::uint8_t* data = haystack.data();
@@ -133,7 +147,7 @@ namespace bypass
 
         if (anchor.size() >= 3)
         {
-            const std::uint8_t triplet[3] = { anchor[0], anchor[1], anchor[2] };
+            const std::array<std::uint8_t, 3> triplet = { anchor[0], anchor[1], anchor[2] };
             ForEachTriplet(haystack, triplet, verify);
             return matches;
         }
@@ -181,7 +195,7 @@ namespace bypass
 
     std::vector<std::uintptr_t> FindLeaReferences(const CodeRegion& code, std::uintptr_t target, LeaRegister destination)
     {
-        const std::uint8_t leaRip[3] = { 0x48, 0x8D, static_cast<std::uint8_t>(destination) };
+        const std::array<std::uint8_t, 3> leaRip = LeaRipBytes(destination);
         constexpr std::size_t instructionLength = 7;
 
         std::vector<std::uintptr_t> references;
@@ -191,6 +205,21 @@ namespace bypass
             const std::uintptr_t next = code.base + found + instructionLength;
             if (next + static_cast<std::intptr_t>(ReadInt32(code.bytes, found + 3)) == target) references.push_back(code.base + found);
         });
+        return references;
+    }
+
+    std::vector<std::uintptr_t> FindRipReferences(
+        const CodeRegion& code, const BytePattern& pattern, std::size_t dispOffset, std::uintptr_t target)
+    {
+        std::vector<std::uintptr_t> references;
+        if (pattern.Size() < dispOffset + sizeof(std::int32_t)) return references;
+
+        for (const std::size_t found : FindAllPattern(code.bytes, pattern))
+        {
+            const std::uintptr_t end = code.base + found + pattern.Size();
+            if (end + static_cast<std::intptr_t>(ReadInt32(code.bytes, found + dispOffset)) == target)
+                references.push_back(code.base + found);
+        }
         return references;
     }
 

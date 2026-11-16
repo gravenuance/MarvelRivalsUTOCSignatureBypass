@@ -140,9 +140,20 @@ int RunProbe(const wchar_t* executable)
     // Today one function inlines the getter: the one that registers the real keys, which the hook is meant to hide.
     start = Clock::now();
     const auto copies = signing.Found() ? InlinedGetterCopies(image, *text, signing.address) : std::set<std::uintptr_t>{};
-    std::printf("%-22s %zu, expected 1  (%.1f ms)\n", "inlined getter copies", copies.size(), MillisecondsSince(start));
-    for (const std::uintptr_t copy : copies) std::printf("  .text+%#llx\n", static_cast<unsigned long long>(copy - text->base));
-    if (copies.size() > 1) std::printf("  More than the key registration: code that reads the keys through its own copy still sees them.\n");
+    if (signing.Found())
+    {
+        std::printf("%-22s %zu, expected 1  (%.1f ms)\n", "inlined getter copies", copies.size(), MillisecondsSince(start));
+        for (const std::uintptr_t copy : copies) std::printf("  .text+%#llx\n", static_cast<unsigned long long>(copy - text->base));
+        if (copies.size() > 1) std::printf("  More than the key registration: code that reads the keys through its own copy still sees them.\n");
+    }
+
+    // The other form of the same hook: the build whose getter is inlined everywhere keeps a binder to hook instead.
+    start = Clock::now();
+    const auto binder = bypass::LocateSigningKeysBinder(*text, *rdata);
+    Report("signing keys binder", binder.function, *text, MillisecondsSince(start));
+    if (binder.function.Found())
+        std::printf("  delegate size at rva %#llx\n",
+            static_cast<unsigned long long>(binder.count - reinterpret_cast<std::uintptr_t>(image)));
 
     start = Clock::now();
     const auto unmount = bypass::LocatePakUnmount(*text, *rdata);
@@ -159,7 +170,9 @@ int RunProbe(const wchar_t* executable)
         upstream != nullptr ? "found" : "not found", MillisecondsSince(start));
 
     FreeLibrary(mapped);
-    return signing.Found() && copies.size() <= 1 && unmount.Found() && mount.Found() ? 0 : 1;
+    // One signing-keys form is enough: the two are mutually exclusive, and the plugin installs whichever matched.
+    const bool signatureBypass = signing.Found() ? copies.size() <= 1 : binder.function.Found();
+    return signatureBypass && unmount.Found() && mount.Found() ? 0 : 1;
 }
 
 int RunClassify(const wchar_t* paksDirectory)

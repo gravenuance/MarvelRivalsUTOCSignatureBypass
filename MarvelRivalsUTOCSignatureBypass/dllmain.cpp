@@ -74,7 +74,7 @@ namespace
             return;
         }
 
-        const bool signatureBypass = InstallSigningKeysBypass(*text);
+        const bool signatureBypass = InstallSigningKeysBypass(*text, *rdata);
         const std::string_view modsAfterLogin = InstallModsAfterLoginUnlessOff(loaded.settings, *text, *rdata, gamePath.parent_path());
         const std::string_view introSkip = InstallIntroSkipUnlessDisabled(loaded.settings);
         log::Info(std::format("Startup finished in {:.0f} ms (signature bypass {}, mods after login {}, intro skip {})",

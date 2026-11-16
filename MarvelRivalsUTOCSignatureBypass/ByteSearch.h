@@ -48,15 +48,22 @@ namespace bypass
     // Offset of the wide string (including its terminator) inside a data region.
     [[nodiscard]] std::optional<std::size_t> FindWideString(Bytes data, std::wstring_view text);
 
-    // ModRM byte of `lea r64, [rip+disp32]` for each destination register the locators need.
-    enum class LeaRegister : std::uint8_t
+    // Destination register of a `lea r64, [rip+disp32]` the locators follow. Every form is seven bytes long.
+    enum class LeaRegister
     {
-        Rcx = 0x0D,
-        Rdx = 0x15,
+        Rcx,
+        Rdx,
+        R8,
     };
 
     // Addresses of every `lea <destination>, [rip+disp32]` whose operand resolves to target.
     [[nodiscard]] std::vector<std::uintptr_t> FindLeaReferences(const CodeRegion& code, std::uintptr_t target, LeaRegister destination);
+
+    // Addresses of every instruction matching pattern whose disp32, at dispOffset, resolves to target. The pattern
+    // must cover the whole instruction, trailing immediate included: a RIP-relative displacement is measured from the
+    // end of the instruction, so a pattern stopping at the displacement resolves short by the immediate's length.
+    [[nodiscard]] std::vector<std::uintptr_t> FindRipReferences(
+        const CodeRegion& code, const BytePattern& pattern, std::size_t dispOffset, std::uintptr_t target);
 
     // Start of the function containing `address`: the nearest 16-byte aligned point within window bytes that follows two
     // int3 padding bytes. 0xCC also occurs inside instructions, singly or doubled, but rarely right before an aligned

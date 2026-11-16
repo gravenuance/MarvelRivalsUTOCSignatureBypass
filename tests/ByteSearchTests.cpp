@@ -136,6 +136,8 @@ TEST(FindLeaReferencesResolvesRipRelativeTargets)
     PutInt32(code, 23, 0x1234);
     code[40] = 0x48; code[41] = 0x8D; code[42] = 0x15;  // lea rdx, same target
     PutInt32(code, 43, static_cast<std::int32_t>(target - (base + 40 + 7)));
+    code[56] = 0x4C; code[57] = 0x8D; code[58] = 0x05;  // lea r8, same target: REX.R, so a different ModRM byte
+    PutInt32(code, 59, static_cast<std::int32_t>(target - (base + 56 + 7)));
     code[76] = 0x48; code[77] = 0x8D; code[78] = 0x0D;  // Truncated: no room for the displacement.
 
     const auto rcx = FindLeaReferences(Region(code, base), target, LeaRegister::Rcx);
@@ -144,6 +146,30 @@ TEST(FindLeaReferencesResolvesRipRelativeTargets)
     const auto rdx = FindLeaReferences(Region(code, base), target, LeaRegister::Rdx);
     CHECK(rdx.size() == 1);
     CHECK(rdx[0] == base + 40);
+    const auto r8 = FindLeaReferences(Region(code, base), target, LeaRegister::R8);
+    CHECK(r8.size() == 1);
+    CHECK(r8[0] == base + 56);
+}
+
+TEST(FindRipReferencesMeasuresFromTheEndOfTheInstruction)
+{
+    Buffer code(40, 0x90);
+    const std::uintptr_t base = 0x1000;
+    const std::uintptr_t target = 0x2000;
+    // `cmp dword [rip+disp32], 0`: the displacement is followed by the immediate, so it resolves seven bytes on.
+    const auto compare = BytePattern::Parse("83 3D ?? ?? ?? ?? 00");
+
+    code[4] = 0x83; code[5] = 0x3D; code[10] = 0x00;
+    PutInt32(code, 6, static_cast<std::int32_t>(target - (base + 4 + 7)));
+    code[20] = 0x83; code[21] = 0x3D; code[26] = 0x00;
+    PutInt32(code, 22, static_cast<std::int32_t>(target - (base + 20 + 6)));  // Measured from the displacement's end.
+
+    const auto references = FindRipReferences(Region(code, base), *compare, 2, target);
+    CHECK(references.size() == 1);
+    CHECK(references[0] == base + 4);
+    // The second site really reads one byte past target, which is the global a six-byte read would have found.
+    CHECK(FindRipReferences(Region(code, base), *compare, 2, target + 1).size() == 1);
+    CHECK(FindRipReferences(Region(code, base), *compare, 4, target).empty());
 }
 
 TEST(FindPaddedFunctionStartStopsAtNearestPadding)

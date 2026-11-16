@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+- Mods load again on the game's "Experimental In-Game Performance" DLC build (2026-11-14). The signature bypass had nothing to hook there: that build is compiled by a different compiler, which folded the signing-keys lookup into its ~20 callers. The plugin now hooks the function that binds the signing keys instead, and marks them unbound once it has run, which is what returning an empty key list does on the base game. Turning the DLC off in Steam is no longer needed.
+- Mods after login work again on that build too. It moved both functions the plugin hooks. The plugin now accepts either compiler's form of all three lookups, so one plugin build covers both the base game and the DLC, and the log line says which one was found.
+
 ## [2.2.0] - 2026-10-28
 
 ### Changed
