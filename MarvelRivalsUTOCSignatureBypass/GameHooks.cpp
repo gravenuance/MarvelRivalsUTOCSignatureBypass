@@ -257,15 +257,20 @@ namespace bypass
 
     // The two game builds keep the signing keys in different places, so each form is tried and whichever verifies is
     // hooked: which one matches says which client is running, so no build detection is needed.
-    bool InstallSigningKeysBypass(const CodeRegion& text, const CodeRegion& rdata, const CodeRegion& data)
+    bool InstallSigningKeysBypass(const CodeRegion& text, const CodeRegion& rdata, const std::optional<CodeRegion>& data)
     {
         const Located getter = LocateSigningKeysDelegate(text);
-        // The binder is the build whose getter is inlined away, so looking for it at all means the getter is absent.
-        const LocatedBinder binder = getter.Found() ? LocatedBinder{} : LocateSigningKeysBinder(text, rdata, data);
+        // The binder is the build whose getter is inlined away, so looking for it at all means the getter is absent. It
+        // also needs .data, to check where it would write: without that section it cannot be installed safely.
+        const bool tryBinder = !getter.Found() && data.has_value();
+        const LocatedBinder binder = tryBinder ? LocateSigningKeysBinder(text, rdata, *data) : LocatedBinder{};
         if (!getter.Found() && !binder.function.Found())
         {
-            log::Error(std::format("Signature bypass not installed: getter {}, delegate binder {}",
-                Describe(getter.error), Describe(binder.function.error)));
+            log::Error(data
+                ? std::format("Signature bypass not installed: getter {}, delegate binder {}",
+                    Describe(getter.error), Describe(binder.function.error))
+                : std::format("Signature bypass not installed: getter {}, and the delegate binder needs a .data section",
+                    Describe(getter.error)));
             return false;
         }
 

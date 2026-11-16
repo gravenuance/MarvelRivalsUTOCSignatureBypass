@@ -68,14 +68,16 @@ namespace
         const HMODULE game = GetModuleHandleW(nullptr);
         const auto text = FindSection(game, ".text");
         const auto rdata = FindSection(game, ".rdata");
-        const auto data = FindSection(game, ".data");
-        if (!text || !rdata || !data)
+        if (!text || !rdata)
         {
             log::Error("Game code sections not found; nothing installed");
             return;
         }
+        // Only the binder form of the signature bypass needs .data, so a build that renamed it keeps every other hook.
+        // Worth not coupling: this game already ships obfuscated section names, and its .pdata is a decoy.
+        const auto data = FindSection(game, ".data");
 
-        const bool signatureBypass = InstallSigningKeysBypass(*text, *rdata, *data);
+        const bool signatureBypass = InstallSigningKeysBypass(*text, *rdata, data);
         const std::string_view modsAfterLogin = InstallModsAfterLoginUnlessOff(loaded.settings, *text, *rdata, gamePath.parent_path());
         const std::string_view introSkip = InstallIntroSkipUnlessDisabled(loaded.settings);
         log::Info(std::format("Startup finished in {:.0f} ms (signature bypass {}, mods after login {}, intro skip {})",
