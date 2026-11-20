@@ -14,4 +14,5 @@ SHA-256 `d56583e8…40eb7`) and take its enclosing function start via the existi
 a store-via-register form as a fallback. That needs no binder prologue bytes, no `+0x2d` and no `0x148`.
 
 Deferred from the 2026-11-16 review because it changes which function is located, and the pattern-based
-locator is the one confirmed working in game; the replacement needs its own in-game check.
+locator is the one confirmed working in game. The user counted the replacement's in-game check as solved on
+2026-11-20.
